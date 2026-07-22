@@ -1,0 +1,98 @@
+@model ApiConsumerDetailViewModel
+
+@{
+    ViewData["Title"] = Model.Consumer.Name;
+}
+
+<div class="page-heading">
+    <div>
+        <h1>@Model.Consumer.Name</h1>
+        <p class="text-muted mb-0">API consumer setup, keys, scopes, and status.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <form asp-action="Update" asp-route-id="@Model.Consumer.Id" method="post" class="settings-panel">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="Id" value="@Model.Consumer.Id" />
+            <div class="mb-3">
+                <label class="form-label" for="Name">Name</label>
+                <input id="Name" name="Name" value="@Model.Consumer.Name" class="form-control" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="Description">Description</label>
+                <textarea id="Description" name="Description" class="form-control" rows="3">@Model.Consumer.Description</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="OwnerEmail">Owner email</label>
+                <input id="OwnerEmail" name="OwnerEmail" value="@Model.Consumer.OwnerEmail" class="form-control" />
+            </div>
+            <div class="form-check mb-3">
+                <input id="IsEnabled" name="IsEnabled" value="true" class="form-check-input" type="checkbox" @(Model.Consumer.IsEnabled ? "checked" : "") />
+                <input name="IsEnabled" value="false" type="hidden" />
+                <label class="form-check-label" for="IsEnabled">Enabled</label>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </div>
+    <div class="col-lg-7">
+        <form asp-action="CreateKey" asp-route-id="@Model.Consumer.Id" method="post" class="settings-panel mb-3">
+            @Html.AntiForgeryToken()
+            <input asp-for="NewKey.ApiConsumerId" type="hidden" value="@Model.Consumer.Id" />
+            <h2 class="h5">Create key</h2>
+            <div class="mb-3">
+                <label asp-for="NewKey.Name" class="form-label"></label>
+                <input asp-for="NewKey.Name" class="form-control" />
+            </div>
+            <div class="mb-3">
+                <label asp-for="NewKey.Scopes" class="form-label"></label>
+                <input asp-for="NewKey.Scopes" class="form-control" />
+                <div class="form-text">Space, comma, or line separated scopes.</div>
+            </div>
+            <div class="mb-3">
+                <label asp-for="NewKey.ExpiresUtc" class="form-label"></label>
+                <input asp-for="NewKey.ExpiresUtc" class="form-control" type="datetime-local" />
+            </div>
+            <button type="submit" class="btn btn-primary">Generate key</button>
+        </form>
+
+        <div class="table-surface">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Key</th>
+                        <th>Scopes</th>
+                        <th>Status</th>
+                        <th>Last Used</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var key in Model.Consumer.Keys)
+                {
+                    <tr>
+                        <td><strong>@key.Name</strong><div class="text-muted small">@key.KeyPrefix...</div></td>
+                        <td class="small">@key.ScopesJson</td>
+                        <td><span class="badge @(key.IsActive ? "text-bg-success" : "text-bg-secondary")">@(key.IsActive ? "Active" : "Inactive")</span></td>
+                        <td>@(key.LastUsedUtc?.ToLocalTime().ToString("g") ?? "Never")</td>
+                        <td class="text-end">
+                            @if (key.RevokedUtc is null)
+                            {
+                                <form asp-action="RevokeKey" asp-route-keyId="@key.Id" method="post">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="consumerId" value="@Model.Consumer.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Revoke</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,21 @@
+**/bin/
+**/obj/
+**/node_modules/
+AIToolbox.ChromeExtension/dist/
+.SQLScripts/
+.Examples/
+.build/
+.dotnet/
+.vs/
+.vscode/
+*.user
+*.suo
+*.pubxml
+*.pubxml.user
+**/Properties/PublishProfiles/
+
+# Keep appsettings.json as a placeholder only. Put real values in ignored
+# environment-specific files, IIS settings, user secrets, or a secret store.
+**/appsettings.*.json
+!**/appsettings.Development.json
+!**/appsettings.example.json

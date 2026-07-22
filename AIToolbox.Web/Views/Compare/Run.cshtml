@@ -1,0 +1,137 @@
+@model PromptRunViewModel
+@inject AIToolbox.Web.Services.IMarkdownRenderer Markdown
+
+@{
+    ViewData["Title"] = "AI Tool Responses";
+    var currentReturnUrl = $"{Context.Request.PathBase}{Context.Request.Path}{Context.Request.QueryString}";
+}
+
+<div class="tool-nav mb-3">
+    <a asp-controller="Compare" asp-action="Index" class="btn btn-sm btn-outline-primary">New comparison</a>
+    <a asp-controller="Compare" asp-action="History" class="btn btn-sm btn-outline-primary">History</a>
+</div>
+<div class="page-heading">
+    <div>
+        <h1>Responses #@Model.Run.Id</h1>
+        <p class="text-muted mb-0">
+            @Model.Run.CreatedUtc.ToLocalTime().ToString("g")
+            <span class="visibility-badge @(Model.Run.IsPublic ? "public" : "private")">@(Model.Run.IsPublic ? "Public" : "Private")</span>
+        </p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="History" class="btn btn-outline-secondary">History</a>
+        <a asp-action="Index" class="btn btn-primary">New question</a>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<section class="tool-surface">
+    <div class="section-heading">
+        <h2>Question</h2>
+        @if (Model.IsOwner)
+        {
+            var targetVisibility = Model.Run.IsPublic ? "false" : "true";
+            <form asp-action="UpdateVisibility" method="post" class="visibility-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Run.Id" />
+                <input type="hidden" name="isPublic" value="@targetVisibility" />
+                <input type="hidden" name="returnUrl" value="@currentReturnUrl" />
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Make @(Model.Run.IsPublic ? "private" : "public")</button>
+            </form>
+        }
+    </div>
+    <pre class="prompt-text">@Model.Run.Question</pre>
+</section>
+
+<section class="response-grid">
+    @foreach (var response in Model.Run.Responses)
+    {
+        <article class="response-panel">
+            <header>
+                <div>
+                    <h2>@response.ProviderName</h2>
+                    <span class="text-muted">@response.DurationMs ms</span>
+                    @if (!string.IsNullOrWhiteSpace(response.FinishReason) || response.InputTokens is not null || response.OutputTokens is not null)
+                    {
+                        <div class="response-diagnostics">
+                            @if (!string.IsNullOrWhiteSpace(response.FinishReason))
+                            {
+                                <span>Finish: @response.FinishReason</span>
+                            }
+                            @if (response.InputTokens is not null)
+                            {
+                                <span>Input: @response.InputTokens tokens</span>
+                            }
+                            @if (response.OutputTokens is not null)
+                            {
+                                <span>Output: @response.OutputTokens tokens</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </header>
+            @if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
+            {
+                <div class="alert alert-danger">@response.ErrorMessage</div>
+            }
+            else
+            {
+                <div class="markdown-body">@Markdown.Render(response.ResponseText)</div>
+            }
+        </article>
+    }
+</section>
+
+@if (Model.AnalysisRuns.Count > 0)
+{
+    <section class="tool-surface mt-4">
+        <h2>Saved analyses</h2>
+        <div class="analysis-list">
+            @foreach (var analysis in Model.AnalysisRuns)
+            {
+                <div class="analysis-list-item">
+                    <div>
+                        <strong>Analysis #@analysis.Id</strong>
+                        <span class="text-muted">@analysis.CreatedUtc.ToLocalTime().ToString("g")</span>
+                        <span class="text-muted">@analysis.ResponseCount response@(analysis.ResponseCount == 1 ? "" : "s")</span>
+                        <span class="text-muted">@analysis.UserEmail</span>
+                    </div>
+                    <a asp-action="Analysis" asp-route-id="@analysis.Id" class="btn btn-sm btn-outline-primary">Open</a>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+<form asp-action="Analyze" method="post" class="tool-surface mt-4">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="PromptRunId" value="@Model.Run.Id" />
+    <div asp-validation-summary="All" class="text-danger"></div>
+
+    <div class="selection-grid">
+        <div>
+            <h2>Analyze responses</h2>
+            <p class="text-muted mb-0">Choose which tools should compare and judge the responses above.</p>
+        </div>
+        <div class="provider-list">
+            @foreach (var provider in Model.AnalysisProviders)
+            {
+                <label class="provider-option">
+                    <input class="form-check-input" type="checkbox" name="SelectedProviderIds" value="@provider.Id" checked="@provider.IsChecked" />
+                    <span>
+                        <strong>@provider.DisplayName</strong>
+                        <small>@provider.ProviderType / @provider.ModelName</small>
+                    </span>
+                </label>
+            }
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Analyze selected responses</button>
+    </div>
+</form>

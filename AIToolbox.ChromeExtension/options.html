@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Toolbox Options</title>
+  <link rel="stylesheet" href="dist/popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Options</h1>
+      <button id="saveButton" type="button">Save</button>
+    </header>
+    <label class="field-label">
+      API base URL
+      <input id="apiBaseUrl" type="url" placeholder="https://aitoolbox.stdair.com">
+    </label>
+    <label class="field-label">
+      Entra client ID
+      <input id="clientId" type="text">
+    </label>
+    <label class="field-label">
+      Entra authority
+      <input id="authority" type="url" placeholder="https://login.microsoftonline.com/common">
+    </label>
+    <label class="field-label">
+      API scope
+      <input id="scope" type="text" placeholder="api://.../AIToolbox.Access">
+    </label>
+    <div id="optionsStatus" class="status"></div>
+    <button id="adminButton" class="hidden" type="button">Open Admin Dashboard</button>
+  </main>
+  <script type="module" src="dist/options.js"></script>
+</body>
+</html>

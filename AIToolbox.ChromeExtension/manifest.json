@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "AI Toolbox",
+  "description": "Upload vendor PDFs to AI Toolbox and recall parsed product data.",
+  "version": "0.2.25",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["alarms", "identity", "notifications", "storage", "tabs"],
+  "host_permissions": ["https://*/", "http://localhost/*", "https://localhost/*"],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "AI Toolbox",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://crm.zoho.com/crm/*"],
+      "js": ["dist/zoho-crm-content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon-32.png"],
+      "matches": ["https://crm.zoho.com/*"]
+    }
+  ],
+  "options_page": "options.html"
+}

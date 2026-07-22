@@ -1,0 +1,81 @@
+@model TenantConsentUrlsViewModel
+
+@{
+    ViewData["Title"] = "Tenant Consent URLs";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Tenant Consent URLs</h1>
+        <p class="text-muted mb-0">Generate Microsoft Entra admin-consent links for configured AIToolbox tenants.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">User Access</a>
+        <a asp-controller="Admin" asp-action="Index" class="btn btn-outline-secondary">Admin Dashboard</a>
+    </div>
+</div>
+
+<section class="tool-surface mb-3">
+    <dl class="metadata-grid mb-0">
+        <dt>Client ID</dt>
+        <dd class="event-log-long">@Model.ClientId</dd>
+        <dt>Redirect URI</dt>
+        <dd class="event-log-long">@Model.RedirectUri</dd>
+        <dt>Configured authority</dt>
+        <dd>@Model.AuthorityTenant</dd>
+    </dl>
+</section>
+
+@if (Model.Tenants.Count == 0)
+{
+    <section class="tool-surface">
+        <p class="text-muted mb-0">No tenant IDs are configured in <code>MicrosoftEntra:AllowedTenantIds</code>.</p>
+    </section>
+}
+else
+{
+    <section class="tool-surface">
+        <div class="section-heading">
+            <h2>Configured Tenants</h2>
+            <span class="text-muted small">@Model.Tenants.Count tenant@(Model.Tenants.Count == 1 ? "" : "s")</span>
+        </div>
+        <div class="table-surface">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Known Domains</th>
+                        <th>Users</th>
+                        <th>Admin Consent URL</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var tenant in Model.Tenants)
+                {
+                    <tr>
+                        <td class="event-log-long"><code>@tenant.TenantId</code></td>
+                        <td>
+                            @if (tenant.InferredDomains.Count == 0)
+                            {
+                                <span class="text-muted">Unknown</span>
+                            }
+                            else
+                            {
+                                @string.Join(", ", tenant.InferredDomains)
+                            }
+                        </td>
+                        <td>@tenant.AuthorizedUserCount</td>
+                        <td>
+                            <input class="form-control code-box" value="@tenant.ConsentUrl" readonly />
+                        </td>
+                        <td class="text-end">
+                            <a href="@tenant.ConsentUrl" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open</a>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}

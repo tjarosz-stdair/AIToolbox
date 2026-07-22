@@ -1,0 +1,44 @@
+@model UserFormViewModel
+
+<form method="post" class="tool-surface">
+    @Html.AntiForgeryToken()
+    <input asp-for="Id" type="hidden" />
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="form-grid">
+        <div class="mb-3">
+            <label asp-for="Email" class="form-label"></label>
+            <input asp-for="Email" class="form-control" />
+            <span asp-validation-for="Email" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="DisplayName" class="form-label"></label>
+            <input asp-for="DisplayName" class="form-control" />
+            <span asp-validation-for="DisplayName" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="TenantId" class="form-label"></label>
+            <input asp-for="TenantId" class="form-control" />
+            <span asp-validation-for="TenantId" class="text-danger"></span>
+            <div class="form-text">Leave blank to allow either configured tenant for this email address.</div>
+        </div>
+    </div>
+
+    <div class="switch-row">
+        <div class="form-check form-switch">
+            <input asp-for="IsAdmin" class="form-check-input" />
+            <label asp-for="IsAdmin" class="form-check-label"></label>
+        </div>
+        <div class="form-check form-switch">
+            <input asp-for="IsEnabled" class="form-check-input" />
+            <label asp-for="IsEnabled" class="form-check-label"></label>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+        <button type="submit" class="btn btn-primary">Save user</button>
+    </div>
+</form>

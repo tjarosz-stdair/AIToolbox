@@ -1,0 +1,57 @@
+@model IReadOnlyList<AuthorizedUser>
+
+@{
+    ViewData["Title"] = "User Access";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>User Access</h1>
+        <p class="text-muted mb-0">Grant access to specific Koch Air and Standard Air Microsoft 365 users.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="ConsentUrls" class="btn btn-outline-primary">Consent URLs</a>
+        <a asp-action="Create" class="btn btn-primary">Add user</a>
+    </div>
+</div>
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Tenant</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var user in Model)
+        {
+            <tr>
+                <td>@user.Email</td>
+                <td>@user.DisplayName</td>
+                <td>@user.TenantId</td>
+                <td>@(user.IsAdmin ? "Admin" : "User")</td>
+                <td>
+                    @if (user.IsEnabled)
+                    {
+                        <span class="badge text-bg-success">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Disabled</span>
+                    }
+                </td>
+                <td>@(user.LastLoginUtc?.ToLocalTime().ToString("g") ?? "Never")</td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@user.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

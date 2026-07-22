@@ -1,0 +1,90 @@
+@model AdminBatchDetailViewModel
+@functions {
+    private static string Preview(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var compact = value.Replace("\r", " ").Replace("\n", " ");
+        return compact.Length <= 700 ? compact : compact[..700] + "...";
+    }
+}
+
+@{
+    ViewData["Title"] = $"Batch #{Model.Job.Id}";
+    var canCancel = Model.Job.Status is not ("Succeeded" or "PartiallySucceeded" or "Failed" or "Cancelled" or "Expired");
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Batch #@Model.Job.Id</h1>
+        <p class="text-muted mb-0">@Model.Job.JobType · @Model.Job.ToolKey · @(Model.Job.ConsumerName ?? Model.Job.UserEmail)</p>
+    </div>
+    <div class="page-actions">
+        <form asp-action="Poll" asp-route-id="@Model.Job.Id" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-outline-secondary">Poll now</button>
+        </form>
+        @if (canCancel)
+        {
+            <form asp-action="Cancel" asp-route-id="@Model.Job.Id" method="post" class="d-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-danger">Cancel</button>
+            </form>
+        }
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-6">
+        <div class="settings-panel h-100">
+            <h2 class="h5">Status</h2>
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Status</dt><dd class="col-sm-8"><span class="badge text-bg-secondary">@Model.Job.Status</span></dd>
+                <dt class="col-sm-4">Provider</dt><dd class="col-sm-8">@Model.Job.AiProviderName</dd>
+                <dt class="col-sm-4">Provider batch</dt><dd class="col-sm-8"><code>@Model.Job.ProviderBatchId</code></dd>
+                <dt class="col-sm-4">Counts</dt><dd class="col-sm-8">@Model.Job.SucceededRequestCount succeeded, @Model.Job.FailedRequestCount failed, @Model.Job.TotalRequestCount total</dd>
+                <dt class="col-sm-4">Created</dt><dd class="col-sm-8">@Model.Job.CreatedUtc.ToLocalTime().ToString("g")</dd>
+                <dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">@(Model.Job.SubmittedUtc?.ToLocalTime().ToString("g") ?? "")</dd>
+                <dt class="col-sm-4">Last poll</dt><dd class="col-sm-8">@(Model.Job.LastPolledUtc?.ToLocalTime().ToString("g") ?? "")</dd>
+                <dt class="col-sm-4">Completed</dt><dd class="col-sm-8">@(Model.Job.CompletedUtc?.ToLocalTime().ToString("g") ?? "")</dd>
+            </dl>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="settings-panel h-100">
+            <h2 class="h5">Metadata Preview</h2>
+            @if (!string.IsNullOrWhiteSpace(Model.Job.ErrorMessage))
+            {
+                <div class="alert alert-danger">@Model.Job.ErrorMessage</div>
+            }
+            <pre class="small text-wrap">@Preview(Model.Job.RequestJson)</pre>
+            <pre class="small text-wrap">@Preview(Model.Job.ResultJson)</pre>
+        </div>
+    </div>
+</div>
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Request</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Tokens</th>
+                <th>Preview</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var request in Model.Requests)
+        {
+            <tr>
+                <td><code>@request.CustomId</code></td>
+                <td>@request.SourceObjectType @request.SourceObjectId</td>
+                <td><span class="badge @(request.Status == "Succeeded" ? "text-bg-success" : request.Status == "Failed" ? "text-bg-danger" : "text-bg-secondary")">@request.Status</span></td>
+                <td>@request.InputTokens / @request.OutputTokens</td>
+                <td class="small">@Preview(request.ErrorJson ?? request.ResponseJson ?? request.RequestJson)</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

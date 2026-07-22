@@ -1,0 +1,84 @@
+@model PromptRunHistoryViewModel
+
+@{
+    ViewData["Title"] = "Saved Queries";
+    var currentReturnUrl = $"{Context.Request.PathBase}{Context.Request.Path}{Context.Request.QueryString}";
+}
+
+<div class="tool-nav mb-3">
+    <a asp-controller="Compare" asp-action="Index" class="btn btn-sm btn-outline-primary">New comparison</a>
+    <a asp-controller="Compare" asp-action="History" class="btn btn-sm btn-outline-primary">History</a>
+</div>
+<div class="page-heading">
+    <div>
+        <h1>Saved Queries</h1>
+        <p class="text-muted mb-0">Recall prior questions, responses, and analyses without re-running the providers.</p>
+    </div>
+    <a asp-action="Index" class="btn btn-primary">New question</a>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<div class="history-filters mb-3">
+    <a asp-action="History" asp-route-scope="all" class="btn @(Model.Scope == "all" ? "btn-primary" : "btn-outline-secondary")">Visible to me</a>
+    <a asp-action="History" asp-route-scope="mine" class="btn @(Model.Scope == "mine" ? "btn-primary" : "btn-outline-secondary")">Mine</a>
+    <a asp-action="History" asp-route-scope="public" class="btn @(Model.Scope == "public" ? "btn-primary" : "btn-outline-secondary")">Public</a>
+</div>
+
+@if (Model.Runs.Count == 0)
+{
+    <div class="tool-surface">
+        <p class="text-muted mb-0">No saved queries match this view yet.</p>
+    </div>
+}
+else
+{
+    <div class="history-list">
+        @foreach (var item in Model.Runs)
+        {
+            var preview = item.Question.Length > 360
+                ? item.Question[..360] + "..."
+                : item.Question;
+
+            <article class="history-item">
+                <div class="history-main">
+                    <div class="history-meta">
+                        <strong>#@item.Id</strong>
+                        <span>@item.CreatedUtc.ToLocalTime().ToString("g")</span>
+                        <span class="visibility-badge @(item.IsPublic ? "public" : "private")">@(item.IsPublic ? "Public" : "Private")</span>
+                        @if (!item.IsOwner)
+                        {
+                            <span>@item.UserEmail</span>
+                        }
+                    </div>
+                    <p class="history-question">@preview</p>
+                    <div class="history-counts">
+                        <span>@item.ResponseCount response@(item.ResponseCount == 1 ? "" : "s")</span>
+                        <span>@item.AnalysisRunCount analysis run@(item.AnalysisRunCount == 1 ? "" : "s")</span>
+                        @if (item.LastAnalysisUtc is not null)
+                        {
+                            <span>Last analysis @item.LastAnalysisUtc.Value.ToLocalTime().ToString("g")</span>
+                        }
+                    </div>
+                </div>
+                <div class="history-actions">
+                    @if (item.IsOwner)
+                    {
+                        var targetVisibility = item.IsPublic ? "false" : "true";
+                        <form asp-action="UpdateVisibility" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@item.Id" />
+                            <input type="hidden" name="isPublic" value="@targetVisibility" />
+                            <input type="hidden" name="returnUrl" value="@currentReturnUrl" />
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">Make @(item.IsPublic ? "private" : "public")</button>
+                        </form>
+                    }
+                    <a asp-action="Run" asp-route-id="@item.Id" class="btn btn-sm btn-primary">Open</a>
+                </div>
+            </article>
+        }
+    </div>
+}

@@ -1,0 +1,55 @@
+@model IReadOnlyList<ToolDefinition>
+
+@{
+    ViewData["Title"] = "Tools";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Tools</h1>
+        <p class="text-muted mb-0">Manage tool availability, provider assignment, and access mode.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="Create" class="btn btn-primary">Add tool</a>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Tool</th>
+                <th>Access</th>
+                <th>Provider</th>
+                <th>Status</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var tool in Model)
+        {
+            <tr>
+                <td>
+                    <strong>@tool.DisplayName</strong>
+                    <div class="text-muted small">@tool.ToolKey</div>
+                </td>
+                <td>@tool.AccessMode</td>
+                <td>@(tool.ActiveProviderName ?? "Not assigned")</td>
+                <td>
+                    <span class="badge @(tool.IsEnabled ? "text-bg-success" : "text-bg-secondary")">
+                        @(tool.IsEnabled ? "Enabled" : "Disabled")
+                    </span>
+                </td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@tool.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

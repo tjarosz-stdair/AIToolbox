@@ -1,0 +1,23 @@
+@model ProviderFormViewModel
+
+@{
+    ViewData["Title"] = "Edit Provider";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Edit Provider</h1>
+        <p class="text-muted mb-0">Leave the API key blank to keep the stored credential.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

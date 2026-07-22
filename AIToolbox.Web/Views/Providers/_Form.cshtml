@@ -1,0 +1,172 @@
+@model ProviderFormViewModel
+
+<form method="post" class="tool-surface">
+    @Html.AntiForgeryToken()
+    <input asp-for="Id" type="hidden" />
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="form-grid">
+        <div class="mb-3">
+            <label asp-for="DisplayName" class="form-label"></label>
+            <input asp-for="DisplayName" class="form-control" />
+            <span asp-validation-for="DisplayName" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <div class="field-label-row">
+                <label asp-for="ProviderType" class="form-label mb-0"></label>
+                <button type="button" class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#providerTypeHelpModal">
+                    Help
+                </button>
+            </div>
+            <select asp-for="ProviderType" asp-items="Html.GetEnumSelectList<AiProviderType>()" class="form-select"></select>
+            <span asp-validation-for="ProviderType" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="EndpointUrl" class="form-label"></label>
+            <input asp-for="EndpointUrl" class="form-control" />
+            <span asp-validation-for="EndpointUrl" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="ModelName" class="form-label"></label>
+            <input asp-for="ModelName" class="form-control" />
+            <span asp-validation-for="ModelName" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="ApiVersion" class="form-label"></label>
+            <input asp-for="ApiVersion" class="form-control" />
+            <span asp-validation-for="ApiVersion" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="ApiKey" class="form-label"></label>
+            <input asp-for="ApiKey" class="form-control" autocomplete="off" />
+            <span asp-validation-for="ApiKey" class="text-danger"></span>
+            @if (Model.HasStoredApiKey)
+            {
+                <div class="form-text">A key is currently stored.</div>
+            }
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="RequestTimeoutSeconds" class="form-label"></label>
+            <input asp-for="RequestTimeoutSeconds" class="form-control" />
+            <span asp-validation-for="RequestTimeoutSeconds" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="MaxOutputTokens" class="form-label"></label>
+            <input asp-for="MaxOutputTokens" class="form-control" />
+            <span asp-validation-for="MaxOutputTokens" class="text-danger"></span>
+            <div class="form-text">Leave blank to use the provider default. If responses end early, raise this value.</div>
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="ExtraHeadersJson" class="form-label"></label>
+            <textarea asp-for="ExtraHeadersJson" class="form-control code-box" rows="4" placeholder="{ &quot;header-name&quot;: &quot;header value&quot; }"></textarea>
+            <span asp-validation-for="ExtraHeadersJson" class="text-danger"></span>
+        </div>
+    </div>
+
+    <div class="switch-row">
+        <div class="form-check form-switch">
+            <input asp-for="IsEnabled" class="form-check-input" />
+            <label asp-for="IsEnabled" class="form-check-label"></label>
+        </div>
+        @if (Model.Id > 0)
+        {
+            <div class="form-check form-switch">
+                <input asp-for="ClearApiKey" class="form-check-input" />
+                <label asp-for="ClearApiKey" class="form-check-label"></label>
+            </div>
+        }
+    </div>
+
+    <div class="form-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+        <button type="submit" class="btn btn-primary">Save provider</button>
+    </div>
+</form>
+
+<div class="modal fade" id="providerTypeHelpModal" tabindex="-1" aria-labelledby="providerTypeHelpTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="providerTypeHelpTitle">Provider Type Help</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body provider-help">
+                <section>
+                    <h3>OpenAI-compatible Chat Completions</h3>
+                    <p>Use for providers that expose a chat-completions-compatible endpoint and return a response immediately.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://api.openai.com/v1/chat/completions</code> or another compatible endpoint.</dd>
+                        <dt>Model name</dt><dd>Required. Examples: <code>gpt-4.1</code>, <code>gpt-4.1-mini</code>, or the compatible provider model id.</dd>
+                        <dt>API version</dt><dd>Usually blank.</dd>
+                    </dl>
+                </section>
+                <section>
+                    <h3>Azure OpenAI</h3>
+                    <p>Use for Azure-hosted chat completions deployments where the deployment is embedded in the endpoint URL.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2024-10-21</code></dd>
+                        <dt>Model name</dt><dd>Required by the app for tracking; use your deployment or model label.</dd>
+                        <dt>API version</dt><dd>Optional if already present in the URL.</dd>
+                    </dl>
+                </section>
+                <section>
+                    <h3>Anthropic Messages</h3>
+                    <p>Use for immediate Claude Messages API calls, including document prompts when the model supports the uploaded document type.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://api.anthropic.com/v1/messages</code></dd>
+                        <dt>Model name</dt><dd>Required. Examples: <code>claude-3-5-sonnet-latest</code>, <code>claude-3-5-haiku-latest</code>.</dd>
+                        <dt>API version</dt><dd>Optional; defaults to <code>2023-06-01</code> if blank.</dd>
+                    </dl>
+                </section>
+                <section>
+                    <h3>OpenAI Responses API</h3>
+                    <p>Use for immediate OpenAI Responses API calls. This is the preferred OpenAI path for document-style product parsing.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://api.openai.com/v1/responses</code></dd>
+                        <dt>Model name</dt><dd>Required. Examples: <code>gpt-4.1</code>, <code>gpt-4.1-mini</code>.</dd>
+                        <dt>API version</dt><dd>Blank.</dd>
+                    </dl>
+                </section>
+                <section>
+                    <h3>OpenAI Responses Background API</h3>
+                    <p>Use when a single OpenAI Responses request may run longer than an ordinary HTTP request, but you still want the app worker to poll that response until it finishes.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://api.openai.com/v1/responses</code></dd>
+                        <dt>Model name</dt><dd>Required. Use a Responses-capable OpenAI model.</dd>
+                        <dt>When to use</dt><dd>Long single document parses where you want completion as soon as possible, not discounted 24-hour batch processing.</dd>
+                    </dl>
+                </section>
+                <section>
+                    <h3>OpenAI Batch Responses API</h3>
+                    <p>Use for discounted asynchronous processing of many provider-ready Responses requests. The batch system submits work, polls status, and stores raw per-request results for the calling app to interpret.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://api.openai.com/v1/batches</code></dd>
+                        <dt>Model name</dt><dd>Required for tracking and request construction by callers. Examples: <code>gpt-4.1</code>, <code>gpt-4.1-mini</code>.</dd>
+                        <dt>When to use</dt><dd>Large datasets or many independent requests where lower cost matters more than immediate completion.</dd>
+                    </dl>
+                </section>
+                <section>
+                    <h3>Anthropic Message Batches</h3>
+                    <p>Use for discounted asynchronous Claude Message batches. The caller supplies many message request bodies, and AIToolbox stores each result by <code>custom_id</code>.</p>
+                    <dl>
+                        <dt>Endpoint URL</dt><dd><code>https://api.anthropic.com/v1/messages/batches</code></dd>
+                        <dt>Model name</dt><dd>Required for tracking and request construction by callers. Examples: <code>claude-3-5-sonnet-latest</code>, <code>claude-3-5-haiku-latest</code>.</dd>
+                        <dt>API version</dt><dd>Optional; defaults to <code>2023-06-01</code> if blank.</dd>
+                        <dt>When to use</dt><dd>Large analysis jobs where the owning app can come back later to retrieve generic results.</dd>
+                    </dl>
+                </section>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

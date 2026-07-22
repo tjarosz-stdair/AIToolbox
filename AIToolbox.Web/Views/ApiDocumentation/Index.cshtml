@@ -1,0 +1,106 @@
+@model ApiDocumentationViewModel
+
+@{
+    ViewData["Title"] = "API Documentation";
+    var groups = Model.Endpoints
+        .GroupBy(endpoint => endpoint.AreaName)
+        .OrderBy(group => group.Key)
+        .ToList();
+    var activeGroup = groups.FirstOrDefault()?.Key ?? "";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>API Documentation</h1>
+        <p class="text-muted mb-0">Admin catalog of available API endpoints, inputs, and example payloads.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-controller="Admin" asp-action="Index" class="btn btn-outline-secondary">Admin Dashboard</a>
+    </div>
+</div>
+
+<ul class="nav nav-tabs api-doc-tabs" role="tablist">
+@foreach (var group in groups)
+{
+    var tabId = $"api-area-{group.Key.Replace(" ", "-").ToLowerInvariant()}";
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(group.Key == activeGroup ? "active" : "")" id="@tabId-tab" data-bs-toggle="tab" data-bs-target="#@tabId" type="button" role="tab" aria-controls="@tabId" aria-selected="@(group.Key == activeGroup ? "true" : "false")">
+            @group.Key <span class="badge text-bg-secondary">@group.Count()</span>
+        </button>
+    </li>
+}
+</ul>
+
+<div class="tab-content api-doc-tab-content">
+@foreach (var group in groups)
+{
+    var tabId = $"api-area-{group.Key.Replace(" ", "-").ToLowerInvariant()}";
+    <section class="tab-pane fade @(group.Key == activeGroup ? "show active" : "")" id="@tabId" role="tabpanel" aria-labelledby="@tabId-tab" tabindex="0">
+        <div class="api-doc-list">
+        @foreach (var endpoint in group)
+        {
+            <section class="api-doc-endpoint">
+                <header>
+                    <span class="api-method">@endpoint.HttpMethod</span>
+                    <code>@endpoint.Path</code>
+                </header>
+                <div class="text-muted small">@endpoint.ActionName</div>
+
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Source</th>
+                                <th>Type</th>
+                                <th>Allowed values</th>
+                                <th>Required</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @if (endpoint.Parameters.Count == 0)
+                        {
+                            <tr><td colspan="5" class="text-muted">No declared parameters.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var parameter in endpoint.Parameters)
+                            {
+                                <tr>
+                                    <td><code>@parameter.Name</code></td>
+                                    <td>@parameter.Source</td>
+                                    <td>@parameter.TypeName</td>
+                                    <td class="api-allowed-values">@(string.IsNullOrWhiteSpace(parameter.AllowedValues) ? "" : parameter.AllowedValues)</td>
+                                    <td>@(parameter.IsRequired ? "Yes" : "No")</td>
+                                </tr>
+                            }
+                        }
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(endpoint.RequestExampleJson) || !string.IsNullOrWhiteSpace(endpoint.ResponseExampleJson))
+                {
+                    <div class="api-example-grid">
+                        @if (!string.IsNullOrWhiteSpace(endpoint.RequestExampleJson))
+                        {
+                            <details>
+                                <summary>Request example</summary>
+                                <pre>@endpoint.RequestExampleJson</pre>
+                            </details>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(endpoint.ResponseExampleJson))
+                        {
+                            <details>
+                                <summary>Response example</summary>
+                                <pre>@endpoint.ResponseExampleJson</pre>
+                            </details>
+                        }
+                    </div>
+                }
+            </section>
+        }
+        </div>
+    </section>
+}
+</div>

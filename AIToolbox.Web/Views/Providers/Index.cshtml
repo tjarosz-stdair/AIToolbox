@@ -1,0 +1,57 @@
+@model IReadOnlyList<AiProvider>
+
+@{
+    ViewData["Title"] = "Provider Admin";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Provider Admin</h1>
+        <p class="text-muted mb-0">Configure the AI tools that can receive questions and analysis prompts.</p>
+    </div>
+    <div class="page-actions">
+        <button type="button" class="btn btn-outline-secondary" data-export-providers-url="@Url.Action("Export", "Providers")">Export config</button>
+        <a asp-action="Create" class="btn btn-primary">Add provider</a>
+    </div>
+</div>
+
+<div class="alert alert-success" data-export-status hidden></div>
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var provider in Model)
+        {
+            <tr>
+                <td>@provider.DisplayName</td>
+                <td>@provider.ProviderType</td>
+                <td>@provider.ModelName</td>
+                <td>
+                    @if (provider.IsEnabled)
+                    {
+                        <span class="badge text-bg-success">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Disabled</span>
+                    }
+                </td>
+                <td>@provider.UpdatedUtc.ToLocalTime().ToString("g")</td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@provider.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

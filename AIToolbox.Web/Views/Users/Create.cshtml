@@ -1,0 +1,18 @@
+@model UserFormViewModel
+
+@{
+    ViewData["Title"] = "Add User";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Add User</h1>
+        <p class="text-muted mb-0">Only enabled granted users can pass the app access policy.</p>
+    </div>
+</div>
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

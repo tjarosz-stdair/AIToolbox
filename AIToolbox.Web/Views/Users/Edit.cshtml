@@ -1,0 +1,23 @@
+@model UserFormViewModel
+
+@{
+    ViewData["Title"] = "Edit User";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Edit User</h1>
+        <p class="text-muted mb-0">Changes take effect the next time the authorization policy is evaluated.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

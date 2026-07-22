@@ -1,0 +1,36 @@
+@model ApiConsumerFormViewModel
+
+@{
+    ViewData["Title"] = "Add API Consumer";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Add API Consumer</h1>
+        <p class="text-muted mb-0">Create a service principal for external API access.</p>
+    </div>
+</div>
+
+<form asp-action="Create" method="post" class="settings-panel">
+    @Html.AntiForgeryToken()
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    <div class="mb-3">
+        <label asp-for="Name" class="form-label"></label>
+        <input asp-for="Name" class="form-control" />
+        <span asp-validation-for="Name" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="Description" class="form-label"></label>
+        <textarea asp-for="Description" class="form-control" rows="3"></textarea>
+    </div>
+    <div class="mb-3">
+        <label asp-for="OwnerEmail" class="form-label"></label>
+        <input asp-for="OwnerEmail" class="form-control" />
+    </div>
+    <div class="form-check mb-3">
+        <input asp-for="IsEnabled" class="form-check-input" />
+        <label asp-for="IsEnabled" class="form-check-label"></label>
+    </div>
+    <button type="submit" class="btn btn-primary">Create</button>
+    <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+</form>

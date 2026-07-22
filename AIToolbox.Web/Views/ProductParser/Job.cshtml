@@ -1,0 +1,123 @@
+@model ProductParseJobDetailViewModel
+
+@{
+    ViewData["Title"] = $"Job #{Model.Job.Id}";
+    var firstFile = Model.Files.FirstOrDefault();
+    var durationMs = Model.Files
+        .Where(file => file.DurationMs is not null)
+        .Select(file => file.DurationMs!.Value)
+        .DefaultIfEmpty()
+        .Max();
+    var totalInputTokens = Model.Files.Sum(file => file.InputTokens ?? 0);
+    var totalOutputTokens = Model.Files.Sum(file => file.OutputTokens ?? 0);
+    var isFailed = string.Equals(Model.Job.Status, "Failed", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Model.Job.Status, "RejectedCatalog", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Model.Job.Status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+    var isSucceeded = string.Equals(Model.Job.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
+    var statusClass = isFailed ? "failed" : isSucceeded ? "succeeded" : "pending";
+}
+
+<div class="tool-nav mb-3">
+    <a asp-action="Index" asp-route-viewMode="new" class="btn btn-sm btn-outline-primary">New Parse</a>
+    <a asp-action="Index" asp-route-viewMode="jobs" asp-route-scope="all" class="btn btn-sm btn-outline-primary">Job History</a>
+    <a asp-action="Index" asp-route-viewMode="library" asp-route-scope="all" class="btn btn-sm btn-outline-primary">Product Library</a>
+</div>
+
+<div class="page-heading product-sticky-heading">
+    <div>
+        <h1>Job #@Model.Job.Id</h1>
+        <p class="text-muted mb-0">@Model.Job.Status · @Model.Products.Count product@(Model.Products.Count == 1 ? "" : "s") · @Model.Files.Count file@(Model.Files.Count == 1 ? "" : "s")</p>
+    </div>
+</div>
+
+<section class="tool-surface mb-3">
+    <div class="section-heading">
+        <h2>Job Metadata</h2>
+    </div>
+    <dl class="metadata-grid mb-0">
+        <dt>Status</dt>
+        <dd><span class="job-chip status @statusClass">@Model.Job.Status</span></dd>
+        <dt>User</dt>
+        <dd>@Model.Job.UserEmail</dd>
+        <dt>Visibility</dt>
+        <dd><span class="job-chip @(Model.Job.IsPublic ? "public" : "private")">@(Model.Job.IsPublic ? "Public" : "Private")</span></dd>
+        <dt>Created</dt>
+        <dd>@Model.Job.CreatedUtc.ToLocalTime().ToString("g")</dd>
+        <dt>Started</dt>
+        <dd>@(Model.Job.StartedUtc?.ToLocalTime().ToString("g") ?? "Not started")</dd>
+        <dt>Completed</dt>
+        <dd>@(Model.Job.CompletedUtc?.ToLocalTime().ToString("g") ?? "Not completed")</dd>
+        <dt>Duration</dt>
+        <dd>@(durationMs > 0 ? FormatDuration(durationMs) : "Not available")</dd>
+        <dt>Tokens</dt>
+        <dd>@(totalInputTokens == 0 ? "?" : totalInputTokens.ToString("N0")) in / @(totalOutputTokens == 0 ? "?" : totalOutputTokens.ToString("N0")) out</dd>
+        <dt>AI provider</dt>
+        <dd>@(firstFile?.AiProviderName ?? "Unknown")@(string.IsNullOrWhiteSpace(firstFile?.AiProviderModelName) ? "" : $" ({firstFile.AiProviderModelName})")</dd>
+        <dt>Directive</dt>
+        <dd>@(firstFile?.DirectiveName ?? "Unknown")@(firstFile?.DirectiveVersion is int version ? $" v{version}" : "")</dd>
+        <dt>Files</dt>
+        <dd>@(Model.Files.Count == 0 ? "None recorded" : string.Join(", ", Model.Files.Select(file => file.OriginalFileName)))</dd>
+        @if (!string.IsNullOrWhiteSpace(Model.Job.ErrorMessage))
+        {
+            <dt>Messages</dt>
+            <dd><pre class="job-stats-error">@Model.Job.ErrorMessage</pre></dd>
+        }
+    </dl>
+</section>
+
+<section class="tool-surface mb-3">
+    <div class="section-heading">
+        <h2>Products In This Job</h2>
+    </div>
+    @if (Model.Products.Count == 0)
+    {
+        <p class="text-muted mb-0">No parsed products were created for this job.</p>
+    }
+    else
+    {
+        <form asp-action="Job" asp-route-id="@Model.Job.Id" method="get" class="job-product-selector">
+            <label class="form-label" for="productId">Product</label>
+            <select class="form-select" id="productId" name="productId" onchange="this.form.submit()">
+                @foreach (var product in Model.Products)
+                {
+                    var label = string.IsNullOrWhiteSpace(product.ProductCode)
+                        ? product.ProductName ?? $"Product #{product.Id}"
+                        : $"{product.ProductCode} - {product.ProductName ?? "Unnamed product"}";
+                    <option value="@product.Id" selected="@(product.Id == Model.SelectedProductId)">@label</option>
+                }
+            </select>
+        </form>
+    }
+</section>
+
+@if (Model.SelectedProduct is not null)
+{
+    <details class="job-product-detail-shell">
+        <summary>@(Model.SelectedProduct.ProductCode ?? Model.SelectedProduct.ProductName ?? $"Product #{Model.SelectedProduct.Id}") details</summary>
+        <div class="mt-3">
+            <partial name="_ParsedProductData" model="Model.SelectedProduct" />
+        </div>
+    </details>
+}
+
+@functions {
+    private static string FormatDuration(int durationMs)
+    {
+        var totalSeconds = Math.Max(0, (int)Math.Round(durationMs / 1000.0, MidpointRounding.AwayFromZero));
+        var hours = totalSeconds / 3600;
+        var minutes = totalSeconds % 3600 / 60;
+        var seconds = totalSeconds % 60;
+
+        if (hours > 0)
+        {
+            return $"{hours} hr {minutes} min";
+        }
+
+        if (minutes > 0)
+        {
+            return $"{minutes} min {seconds} sec";
+        }
+
+        return $"{seconds} sec";
+    }
+}

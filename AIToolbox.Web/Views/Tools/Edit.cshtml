@@ -1,0 +1,115 @@
+@model ToolEditViewModel
+
+@{
+    ViewData["Title"] = Model.Id == 0 ? "Add Tool" : "Edit Tool";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>@ViewData["Title"]</h1>
+        <p class="text-muted mb-0">Assign one active provider and choose whether this tool needs explicit approval.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<form asp-action="Edit" asp-route-id="@Model.Id" method="post" class="tool-surface">
+    @Html.AntiForgeryToken()
+    <input asp-for="Id" type="hidden" />
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    <div class="form-grid">
+        <div class="mb-3">
+            <label asp-for="ToolKey" class="form-label"></label>
+            <input asp-for="ToolKey" class="form-control" />
+            <span asp-validation-for="ToolKey" class="text-danger"></span>
+        </div>
+        <div class="mb-3">
+            <label asp-for="DisplayName" class="form-label"></label>
+            <input asp-for="DisplayName" class="form-control" />
+            <span asp-validation-for="DisplayName" class="text-danger"></span>
+        </div>
+        <div class="mb-3">
+            <label asp-for="AccessMode" class="form-label"></label>
+            <select asp-for="AccessMode" asp-items="Html.GetEnumSelectList<ToolAccessMode>()" class="form-select"></select>
+        </div>
+        <div class="mb-3">
+            <label asp-for="ActiveProviderId" class="form-label">Active provider</label>
+            <select asp-for="ActiveProviderId" class="form-select">
+                <option value="">Not assigned</option>
+                @foreach (var provider in Model.Providers)
+                {
+                    <option value="@provider.Id">@provider.DisplayName (@provider.ModelName)</option>
+                }
+            </select>
+        </div>
+        <div class="mb-3 wide">
+            <label asp-for="Description" class="form-label"></label>
+            <textarea asp-for="Description" class="form-control" rows="3"></textarea>
+        </div>
+        <div class="mb-3 wide form-check form-switch">
+            <input asp-for="IsEnabled" class="form-check-input" />
+            <label asp-for="IsEnabled" class="form-check-label">Enabled</label>
+        </div>
+    </div>
+    <div class="form-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+        <button type="submit" class="btn btn-primary">Save tool</button>
+    </div>
+</form>
+
+@if (Model.Id != 0)
+{
+    <section class="tool-surface mt-3">
+        <div class="section-heading">
+            <h2>Allow list</h2>
+        </div>
+        <form asp-action="AddAllowList" asp-route-toolKey="@Model.ToolKey" method="post" class="row g-2 mb-3">
+            @Html.AntiForgeryToken()
+            <div class="col-md-8">
+                <input name="newAllowListEmail" class="form-control" type="email" placeholder="user@example.com" />
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-outline-primary w-100">Add user</button>
+            </div>
+        </form>
+        <div class="table-surface">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Granted by</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var entry in Model.AllowList)
+                {
+                    <tr>
+                        <td>@entry.UserEmail</td>
+                        <td>@(entry.IsEnabled ? "Enabled" : "Disabled")</td>
+                        <td>@entry.GrantedByEmail</td>
+                        <td class="text-end">
+                            @if (entry.IsEnabled)
+                            {
+                                <form asp-action="DisableAllowListEntry" asp-route-id="@entry.Id" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="toolKey" value="@Model.ToolKey" />
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

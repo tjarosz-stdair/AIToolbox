@@ -1,0 +1,25 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37411.7 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIToolbox.Web", "AIToolbox.Web.csproj", "{3639942E-28E5-C308-1642-34C99A4A0493}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3639942E-28E5-C308-1642-34C99A4A0493}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3639942E-28E5-C308-1642-34C99A4A0493}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3639942E-28E5-C308-1642-34C99A4A0493}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3639942E-28E5-C308-1642-34C99A4A0493}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {52D0DC79-A718-45E5-8D0E-9AF8099EC30D}
+	EndGlobalSection
+EndGlobal

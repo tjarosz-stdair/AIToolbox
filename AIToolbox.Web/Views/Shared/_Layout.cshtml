@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - AI Toolbox</title>
+    <script type="importmap"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/AIToolbox.Web.styles.css" asp-append-version="true" />
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom app-nav">
+            <div class="container-fluid">
+                <a class="navbar-brand" asp-controller="Home" asp-action="Index">AI Toolbox</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
+                        aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="navbar-collapse collapse">
+                    <ul class="navbar-nav me-auto">
+
+                        @if (User.IsInRole("Admin"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Admin" asp-action="Index">Admin Dashboard</a>
+                            </li>
+                        }
+                    </ul>
+                    <div class="navbar-nav align-items-lg-center gap-2">
+                        @if (User.Identity?.IsAuthenticated == true)
+                        {
+                            <div class="nav-item dropdown jobs-menu" data-jobs-menu data-jobs-url="@Url.Action("InProgress", "Jobs")" data-cancel-url-template="@Url.Content("~/Jobs/Cancel/__id__")">
+                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle jobs-menu-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Jobs
+                                    <span class="badge text-bg-success jobs-completed-count" data-jobs-completed-count hidden>0 done</span>
+                                    <span class="badge text-bg-secondary jobs-count" data-jobs-count hidden>0</span>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end jobs-dropdown">
+                                    <div class="jobs-notify-row" data-jobs-notify-row hidden>
+                                        <button class="btn btn-sm btn-outline-secondary" type="button" data-jobs-enable-notifications>Enable desktop alerts</button>
+                                    </div>
+                                    <div class="jobs-completed" data-jobs-completed hidden>
+                                        <div class="jobs-completed-heading">
+                                            <strong>Recently finished</strong>
+                                            <button class="btn btn-sm btn-link" type="button" data-jobs-clear-completed>Clear</button>
+                                        </div>
+                                        <div class="jobs-list" data-jobs-completed-list></div>
+                                    </div>
+                                    <div class="jobs-empty" data-jobs-empty>No jobs are currently processing.</div>
+                                    <div class="jobs-list" data-jobs-list></div>
+                                </div>
+                                <form class="d-none" data-jobs-token-form>
+                                    @Html.AntiForgeryToken()
+                                </form>
+                            </div>
+                            <span class="nav-user">@User.GetEmailAddress()</span>
+                            <form asp-controller="Account" asp-action="SignOut" method="post" class="m-0">
+                                @Html.AntiForgeryToken()
+                                <button class="btn btn-outline-secondary btn-sm" type="submit">Sign out</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <a asp-controller="Account" asp-action="SignIn" class="btn btn-primary btn-sm">Sign in</a>
+                        }
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <main class="container-fluid app-shell">
+        @RenderBody()
+    </main>
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

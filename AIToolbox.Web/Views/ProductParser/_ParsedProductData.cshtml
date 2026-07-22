@@ -1,0 +1,252 @@
+@model AIToolbox.Web.Models.ParsedProduct
+@using Microsoft.AspNetCore.Html
+@using System.Text
+@using System.Text.Json
+
+@{
+    using var document = JsonDocument.Parse(Model.ProductDataJson);
+    var productRoot = document.RootElement;
+    var rawJson = JsonSerializer.Serialize(productRoot, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+    var sections = BuildSections(productRoot);
+}
+
+<section class="tool-surface mb-3">
+    <div class="section-heading">
+        <h2>Extracted Data</h2>
+    </div>
+
+    @if (sections.Count == 0)
+    {
+        <p class="text-muted mb-0">No formatted product data is available. Use the raw response section below for review.</p>
+    }
+    else
+    {
+        <div class="product-detail-stack">
+            @foreach (var productSection in sections)
+            {
+                <article class="product-detail-section">
+                    <div class="product-section-heading">
+                        <h3>@productSection.Title</h3>
+                        @if (productSection.IsArray)
+                        {
+                            <div class="array-format-toggle" role="group" aria-label="@($"{productSection.Title} display format")">
+                                <button type="button" class="btn btn-sm btn-primary" data-array-format="lines">One per line</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-array-format="comma">Comma</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-array-format="tab">Tab</button>
+                            </div>
+                        }
+                    </div>
+
+                    @if (productSection.IsArray)
+                    {
+                        <div class="copy-row">
+                            <textarea class="form-control product-long-field" rows="@productSection.Rows" readonly data-array-output data-lines="@productSection.Lines" data-comma="@productSection.CommaDelimited" data-tab="@productSection.TabDelimited">@productSection.Lines</textarea>
+                            <button class="btn btn-outline-secondary copy-icon-button" type="button" title="@($"Copy {productSection.Title}")" aria-label="@($"Copy {productSection.Title}")" data-copy-neighbor>Copy</button>
+                        </div>
+                    }
+                    else if (productSection.Fields.Count == 1 && productSection.Fields[0].Label == productSection.Title)
+                    {
+                        @RenderFieldControl(productSection.Fields[0])
+                    }
+                    else
+                    {
+                        <dl class="product-field-list">
+                            @foreach (var field in productSection.Fields)
+                            {
+                                <dt>@field.Label</dt>
+                                <dd>@RenderFieldControl(field)</dd>
+                            }
+                        </dl>
+                    }
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="tool-surface">
+    <div class="section-heading">
+        <h2>Raw JSON</h2>
+    </div>
+    <details class="raw-json-details">
+        <summary>Review raw extracted JSON</summary>
+        <div class="copy-row mt-3">
+            <textarea class="form-control code-box raw-json-box" rows="18" readonly>@rawJson</textarea>
+            <button class="btn btn-outline-secondary copy-icon-button" type="button" title="Copy raw JSON" aria-label="Copy raw JSON" data-copy-neighbor>Copy</button>
+        </div>
+    </details>
+</section>
+
+@functions {
+    private static IHtmlContent RenderFieldControl(ProductDisplayField field)
+    {
+        var builder = new HtmlContentBuilder();
+        builder.AppendHtml(field.IsLong
+            ? $"""
+              <div class="copy-row">
+                  <textarea class="form-control product-long-field" rows="4" readonly>{HtmlEncode(field.Value)}</textarea>
+                  <button class="btn btn-outline-secondary copy-icon-button" type="button" title="Copy {HtmlEncode(field.Label)}" aria-label="Copy {HtmlEncode(field.Label)}" data-copy-neighbor>Copy</button>
+              </div>
+              """
+            : $"""
+              <div class="copy-row product-copy-row-compact">
+                  <input class="form-control" value="{HtmlEncode(field.Value)}" readonly />
+                  <button class="btn btn-outline-secondary copy-icon-button" type="button" title="Copy {HtmlEncode(field.Label)}" aria-label="Copy {HtmlEncode(field.Label)}" data-copy-neighbor>Copy</button>
+              </div>
+              """);
+        return builder;
+    }
+
+    private static IReadOnlyList<ProductDisplaySection> BuildSections(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        return root.EnumerateObject()
+            .Select(BuildSection)
+            .Where(section => section is not null)
+            .Cast<ProductDisplaySection>()
+            .ToList();
+    }
+
+    private static ProductDisplaySection? BuildSection(JsonProperty property)
+    {
+        var title = ToLabel(property.Name);
+        var value = property.Value;
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            var lines = FormatArray(value, "\n");
+            if (string.IsNullOrWhiteSpace(lines))
+            {
+                return null;
+            }
+
+            return new ProductDisplaySection
+            {
+                Title = title,
+                IsArray = true,
+                Lines = lines,
+                CommaDelimited = FormatArray(value, ", "),
+                TabDelimited = FormatArray(value, "\t"),
+                Rows = Math.Min(Math.Max(value.GetArrayLength(), 4), 12)
+            };
+        }
+
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            var fields = value.EnumerateObject()
+                .Select(child => new ProductDisplayField(ToLabel(child.Name), ValueToText(child.Value)))
+                .Where(field => !string.IsNullOrWhiteSpace(field.Value))
+                .ToList();
+
+            return fields.Count == 0
+                ? null
+                : new ProductDisplaySection { Title = title, Fields = fields };
+        }
+
+        var text = ValueToText(value);
+        return string.IsNullOrWhiteSpace(text)
+            ? null
+            : new ProductDisplaySection { Title = title, Fields = [new ProductDisplayField(title, text)] };
+    }
+
+    private static string ToLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Field";
+        }
+
+        var builder = new StringBuilder();
+        var previousWasLower = false;
+        foreach (var character in value.Trim())
+        {
+            if (character is '_' or '-')
+            {
+                builder.Append(' ');
+                previousWasLower = false;
+                continue;
+            }
+
+            if (char.IsUpper(character) && previousWasLower)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(character);
+            previousWasLower = char.IsLower(character) || char.IsDigit(character);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string ValueToText(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => "Yes",
+            JsonValueKind.False => "No",
+            JsonValueKind.Null => string.Empty,
+            JsonValueKind.Array => FormatArray(value, ", "),
+            JsonValueKind.Object => FormatObject(value),
+            _ => value.ToString()
+        };
+    }
+
+    private static string FormatArray(JsonElement value, string delimiter)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return ValueToText(value);
+        }
+
+        return string.Join(delimiter, value.EnumerateArray().Select(ValueToText).Where(text => !string.IsNullOrWhiteSpace(text)));
+    }
+
+    private static string FormatObject(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            return ValueToText(value);
+        }
+
+        return string.Join(Environment.NewLine, value.EnumerateObject().Select(property => $"{ToLabel(property.Name)}: {ValueToText(property.Value)}"));
+    }
+
+    private static string HtmlEncode(string value)
+    {
+        return System.Net.WebUtility.HtmlEncode(value);
+    }
+
+    private sealed class ProductDisplaySection
+    {
+        public string Title { get; init; } = string.Empty;
+        public bool IsArray { get; init; }
+        public string Lines { get; init; } = string.Empty;
+        public string CommaDelimited { get; init; } = string.Empty;
+        public string TabDelimited { get; init; } = string.Empty;
+        public int Rows { get; init; } = 4;
+        public IReadOnlyList<ProductDisplayField> Fields { get; init; } = [];
+    }
+
+    private sealed class ProductDisplayField
+    {
+        public ProductDisplayField(string label, string value)
+        {
+            Label = label;
+            Value = value;
+            IsLong = value.Length > 120
+                || label.Contains("description", StringComparison.OrdinalIgnoreCase)
+                || label.Contains("notes", StringComparison.OrdinalIgnoreCase)
+                || label.Contains("summary", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public string Label { get; }
+        public string Value { get; }
+        public bool IsLong { get; }
+    }
+}

@@ -1,0 +1,62 @@
+@model AnalysisRunViewModel
+@inject AIToolbox.Web.Services.IMarkdownRenderer Markdown
+
+@{
+    ViewData["Title"] = "AI Analysis";
+}
+
+<div class="tool-nav mb-3">
+    <a asp-controller="Compare" asp-action="Index" class="btn btn-sm btn-outline-primary">New comparison</a>
+    <a asp-controller="Compare" asp-action="History" class="btn btn-sm btn-outline-primary">History</a>
+</div>
+<div class="page-heading">
+    <div>
+        <h1>Analysis</h1>
+        <p class="text-muted mb-0">@Model.AnalysisRun.CreatedUtc.ToLocalTime().ToString("g")</p>
+    </div>
+    <a asp-action="Run" asp-route-id="@Model.PromptRun.Id" class="btn btn-outline-secondary">Back to responses</a>
+</div>
+
+<section class="tool-surface">
+    <h2>Original question</h2>
+    <pre class="prompt-text">@Model.PromptRun.Question</pre>
+</section>
+
+<section class="response-grid">
+    @foreach (var response in Model.AnalysisRun.Responses)
+    {
+        <article class="response-panel">
+            <header>
+                <div>
+                    <h2>@response.ProviderName</h2>
+                    <span class="text-muted">@response.DurationMs ms</span>
+                    @if (!string.IsNullOrWhiteSpace(response.FinishReason) || response.InputTokens is not null || response.OutputTokens is not null)
+                    {
+                        <div class="response-diagnostics">
+                            @if (!string.IsNullOrWhiteSpace(response.FinishReason))
+                            {
+                                <span>Finish: @response.FinishReason</span>
+                            }
+                            @if (response.InputTokens is not null)
+                            {
+                                <span>Input: @response.InputTokens tokens</span>
+                            }
+                            @if (response.OutputTokens is not null)
+                            {
+                                <span>Output: @response.OutputTokens tokens</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </header>
+            @if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
+            {
+                <div class="alert alert-danger">@response.ErrorMessage</div>
+            }
+            else
+            {
+                <div class="markdown-body">@Markdown.Render(response.ResponseText)</div>
+            }
+        </article>
+    }
+</section>

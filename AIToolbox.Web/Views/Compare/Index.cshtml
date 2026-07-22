@@ -1,0 +1,80 @@
+@model AskViewModel
+
+@{
+    ViewData["Title"] = "Compare AI Tools";
+}
+
+<div class="tool-nav mb-3">
+    <a asp-controller="Compare" asp-action="Index" class="btn btn-sm btn-outline-primary">New comparison</a>
+    <a asp-controller="Compare" asp-action="History" class="btn btn-sm btn-outline-primary">History</a>
+</div>
+<div class="page-heading">
+    <div>
+        <h1>Compare AI Tools</h1>
+        <p class="text-muted mb-0">Submit the same question to selected tools, then evaluate their answers with selected analysis tools.</p>
+    </div>
+</div>
+
+<form asp-action="Ask" method="post" class="tool-surface" data-progress-form="compare" data-progress-url="@Url.Action("AskStream", "Compare")">
+    @Html.AntiForgeryToken()
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="mb-3">
+        <label asp-for="Question" class="form-label"></label>
+        <textarea asp-for="Question" class="form-control question-box" rows="9" placeholder="Enter the exact question to send to each selected AI tool."></textarea>
+        <span asp-validation-for="Question" class="text-danger"></span>
+    </div>
+
+    <div class="form-check visibility-check mb-4">
+        <input asp-for="IsPublic" class="form-check-input" />
+        <label asp-for="IsPublic" class="form-check-label"></label>
+        <div class="form-text">Private saved queries are only visible to you. Public saved queries are visible to authorized users of this app.</div>
+    </div>
+
+    <div class="selection-grid">
+        <div>
+            <h2>AI tools</h2>
+            <span asp-validation-for="SelectedProviderIds" class="text-danger d-block"></span>
+        </div>
+        <div class="provider-list">
+            @if (Model.Providers.Count == 0)
+            {
+                <div class="alert alert-warning mb-0">
+                    No enabled AI tools are configured yet. An admin can add them under Provider Admin.
+                </div>
+            }
+            else
+            {
+                foreach (var provider in Model.Providers)
+                {
+                    <label class="provider-option">
+                        <input class="form-check-input" type="checkbox" name="SelectedProviderIds" value="@provider.Id" checked="@provider.IsChecked" data-provider-name="@provider.DisplayName" />
+                        <span>
+                            <strong>@provider.DisplayName</strong>
+                            <small>@provider.ProviderType / @provider.ModelName</small>
+                        </span>
+                    </label>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit" @(Model.Providers.Count == 0 ? "disabled" : null)>Submit to selected tools</button>
+    </div>
+
+    <div class="submit-progress mt-4" data-submit-progress hidden>
+        <div class="submit-progress-heading">
+            <div class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></div>
+            <div>
+                <strong data-progress-status>Submitting to selected AI tools...</strong>
+                <div class="text-muted" data-progress-detail>This can take a minute or two depending on provider latency.</div>
+            </div>
+        </div>
+        <ul class="progress-list" data-progress-list></ul>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

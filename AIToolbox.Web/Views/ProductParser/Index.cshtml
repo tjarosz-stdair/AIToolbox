@@ -1,0 +1,550 @@
+@model ProductParserViewModel
+@using Microsoft.AspNetCore.Html
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = "Product Parser";
+    var isNew = Model.ViewMode == "new";
+    var isLibrary = Model.ViewMode == "library";
+    var isJobs = Model.ViewMode == "jobs";
+    var directivePreviewJson = JsonSerializer.Serialize(Model.AvailableDirectives.Select(directive => new
+    {
+        id = directive.Id,
+        name = directive.Name,
+        version = directive.Version,
+        systemPrompt = directive.SystemPrompt,
+        targetSchemaJson = directive.TargetSchemaJson
+    }));
+}
+
+<div class="tool-nav mb-3">
+    <a asp-action="Index" asp-route-viewMode="new" class="btn btn-sm @(isNew ? "btn-primary" : "btn-outline-primary")">New Parse</a>
+    <a asp-action="Index" asp-route-viewMode="jobs" asp-route-scope="all" class="btn btn-sm @(isJobs ? "btn-primary" : "btn-outline-primary")">Job History</a>
+    <a asp-action="Index" asp-route-viewMode="library" asp-route-scope="all" class="btn btn-sm @(isLibrary ? "btn-primary" : "btn-outline-primary")">Product Library</a>
+</div>
+
+<div class="page-heading">
+    <div>
+        <h1>Product Parser</h1>
+        <p class="text-muted mb-0">Extract reviewable product data for Zoho from vendor source documents.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+@if (isNew)
+{
+    <form asp-action="Parse" method="post" enctype="multipart/form-data" class="tool-surface mb-3" data-pdf-drop-form>
+        @Html.AntiForgeryToken()
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+        <input asp-for="Scope" type="hidden" />
+
+        <div class="pdf-drop-zone" data-pdf-drop-zone>
+            <input asp-for="Files" class="pdf-file-input" type="file" accept="application/pdf" multiple data-pdf-file-input />
+            <div class="pdf-drop-content">
+                <strong>Drag and drop PDFs here</strong>
+                <span>or</span>
+                <button type="button" class="btn btn-outline-primary" data-pdf-browse>Browse</button>
+            </div>
+        </div>
+        <span asp-validation-for="Files" class="text-danger"></span>
+
+        <div class="pdf-file-list mt-3" data-pdf-file-list>
+            <p class="text-muted mb-0">No PDFs selected yet.</p>
+        </div>
+
+        <div class="mt-3">
+            <label asp-for="SelectedDirectiveId" class="form-label"></label>
+            <div class="directive-selector-row">
+                <select asp-for="SelectedDirectiveId" class="form-select" data-directive-selector>
+                        @if (Model.AvailableDirectives.Count == 0)
+                        {
+                            <option value="">No active directives available</option>
+                        }
+                        else
+                        {
+                            @foreach (var directive in Model.AvailableDirectives)
+                            {
+                                <option value="@directive.Id">@(directive.Name) v@(directive.Version)</option>
+                            }
+                        }
+                </select>
+                <button type="button"
+                        class="directive-preview-button"
+                        aria-label="Preview selected directive"
+                        title="Preview selected directive"
+                        data-directive-preview-button
+                        disabled="@(Model.AvailableDirectives.Count == 0 ? "disabled" : null)">
+                    ?
+                </button>
+            </div>
+            <div class="form-text">Your selected directive is remembered for future product parses on this browser.</div>
+        </div>
+
+        <div class="tool-option-grid mt-3">
+            <label class="tool-option">
+                <input asp-for="ParseMode" type="radio" value="sameProduct" checked="@(Model.ParseMode == "sameProduct")" />
+                <span>
+                    <strong>Same product</strong>
+                    <small>Merge selected source files into one product.</small>
+                </span>
+            </label>
+            <label class="tool-option">
+                <input asp-for="ParseMode" type="radio" value="separateProducts" checked="@(Model.ParseMode == "separateProducts")" />
+                <span>
+                    <strong>Separate products</strong>
+                    <small>Create one product per selected source file.</small>
+                </span>
+            </label>
+            <label class="tool-option">
+                <input asp-for="ParseMode" type="radio" value="catalog" checked="@(Model.ParseMode == "catalog")" />
+                <span>
+                    <strong>Catalog</strong>
+                    <small>Extract up to 100 products from a narrow catalog.</small>
+                </span>
+            </label>
+        </div>
+
+        <div class="mt-3">
+            <label asp-for="UserNotes" class="form-label"></label>
+            <textarea asp-for="UserNotes" class="form-control" rows="4" placeholder="Optional context: product line, pages, supplier hints, fields to focus on, or exclusions."></textarea>
+            <div class="form-text">Notes add context for this parse but do not override the admin directive.</div>
+        </div>
+
+        <div class="form-check visibility-check mt-3 mb-3">
+            <input asp-for="IsPublic" class="form-check-input" />
+            <label asp-for="IsPublic" class="form-check-label"></label>
+            <div class="form-text">Private parses are only visible to you. Public parses are visible to authorized users of this tool.</div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary" data-pdf-submit disabled>Parse selected PDFs</button>
+        </div>
+        <script type="application/json" id="product-parser-directives">@Html.Raw(directivePreviewJson)</script>
+    </form>
+}
+else if (isLibrary)
+{
+    <form asp-action="Index" method="get" class="tool-surface mb-3">
+        <input type="hidden" name="viewMode" value="library" />
+        <div class="library-filter-grid">
+            <div>
+                <label class="form-label" for="scope">Visibility</label>
+                <select class="form-select" id="scope" name="scope">
+                    <option value="all" selected="@(Model.Scope == "all")">Visible to me</option>
+                    <option value="mine" selected="@(Model.Scope == "mine")">Mine</option>
+                    <option value="public" selected="@(Model.Scope == "public")">Public</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="search">Search</label>
+                <input class="form-control" id="search" name="search" value="@Model.Search" />
+            </div>
+            <div>
+                <label class="form-label" for="supplier">Supplier</label>
+                <select class="form-select" id="supplier" name="supplier">
+                    <option value="">Any supplier</option>
+                    @foreach (var option in Model.SupplierOptions)
+                    {
+                        <option value="@option" selected="@(Model.Supplier == option)">@option</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="manufacturer">Manufacturer</label>
+                <select class="form-select" id="manufacturer" name="manufacturer">
+                    <option value="">Any manufacturer</option>
+                    @foreach (var option in Model.ManufacturerOptions)
+                    {
+                        <option value="@option" selected="@(Model.Manufacturer == option)">@option</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="category">Category</label>
+                <select class="form-select" id="category" name="category">
+                    <option value="">Any category</option>
+                    @foreach (var option in Model.CategoryOptions)
+                    {
+                        <option value="@option" selected="@(Model.Category == option)">@option</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="minValue">Min value</label>
+                <input class="form-control" id="minValue" name="minValue" type="number" step="0.01" value="@Model.MinValue" />
+            </div>
+            <div>
+                <label class="form-label" for="maxValue">Max value</label>
+                <input class="form-control" id="maxValue" name="maxValue" type="number" step="0.01" value="@Model.MaxValue" />
+            </div>
+            <div class="library-filter-actions">
+                <button type="submit" class="btn btn-primary">Filter</button>
+                <a asp-action="Index" asp-route-viewMode="library" asp-route-scope="all" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </div>
+    </form>
+
+    <section class="tool-surface mb-3">
+        <div class="section-heading">
+            <h2>Product Library</h2>
+        </div>
+        @if (Model.LibraryGroups.Count == 0)
+        {
+            <p class="text-muted mb-0">No library products match this view yet.</p>
+        }
+        else
+        {
+            <div class="table-surface">
+                <table class="table align-middle mb-0" data-sortable-table>
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="0">Product</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="1">Code</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="2">Supplier</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="3">Manufacturer</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="4">Category</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="5" data-sort-type="number">Value</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="6" data-sort-type="number">Runs</button></th>
+                            <th><button type="button" class="sort-link table-sort-button" data-sort-column="7" data-sort-type="date">Last Run</button></th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var product in Model.LibraryGroups)
+                    {
+                        var libraryGroupId = $"library-runs-{Math.Abs(HashCode.Combine(product.ProductName, product.ProductCode, product.Supplier, product.Manufacturer))}";
+                        <tr data-sort-row>
+                            <td data-sort-value="@(product.ProductName ?? "")">
+                                @if (product.RunCount > 1)
+                                {
+                                    <button type="button"
+                                            class="library-expand-button"
+                                            aria-expanded="false"
+                                            aria-controls="@libraryGroupId"
+                                            data-library-toggle="@libraryGroupId">
+                                        <span data-library-chevron></span>
+                                        <span>@(product.ProductName ?? "Unnamed product")</span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    @(product.ProductName ?? "Unnamed product")
+                                }
+                            </td>
+                            <td data-sort-value="@(product.ProductCode ?? "")">@product.ProductCode</td>
+                            <td data-sort-value="@(product.Supplier ?? "")">@product.Supplier</td>
+                            <td data-sort-value="@(product.Manufacturer ?? "")">@product.Manufacturer</td>
+                            <td data-sort-value="@(product.Category ?? "")">@product.Category</td>
+                            <td data-sort-value="@(product.ProductValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")">@(product.ProductValue?.ToString("C") ?? "")</td>
+                            <td data-sort-value="@product.RunCount">@product.RunCount</td>
+                            <td data-sort-value="@product.LastRunUtc.ToString("O")">@product.LastRunUtc.ToLocalTime().ToString("g")</td>
+                            <td class="text-end">
+                                @if (product.LatestParsedProductId is int parsedProductId)
+                                {
+                                    <a asp-action="Product" asp-route-id="@parsedProductId" class="btn btn-sm btn-outline-primary">Open</a>
+                                }
+                            </td>
+                        </tr>
+                        @if (product.RunCount > 1)
+                        {
+                            <tr id="@libraryGroupId" class="library-runs-row" hidden>
+                                <td colspan="9">
+                                    <div class="library-run-list">
+                                        @foreach (var run in product.Runs)
+                                        {
+                                            <div class="library-run-item">
+                                                <div>
+                                                    <strong>@run.CreatedUtc.ToLocalTime().ToString("g")</strong>
+                                                    <span class="text-muted small">@(run.OriginalFileName ?? $"Job #{run.ToolJobId}")</span>
+                                                </div>
+                                                <div class="library-run-meta">
+                                                    <span class="job-chip @(run.IsPublic ? "public" : "private")">@(run.IsPublic ? "Public" : "Private")</span>
+                                                    @if (!string.IsNullOrWhiteSpace(run.Status))
+                                                    {
+                                                        <span class="job-chip status">@run.Status</span>
+                                                    }
+                                                    @if (!string.IsNullOrWhiteSpace(run.DirectiveName))
+                                                    {
+                                                        <span class="text-muted small">@run.DirectiveName@(run.DirectiveVersion is int version ? $" v{version}" : "")</span>
+                                                    }
+                                                    @if (run.ParsedProductId is int runProductId)
+                                                    {
+                                                        <a asp-action="Product" asp-route-id="@runProductId" class="btn btn-sm btn-outline-primary">Open</a>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+}
+else if (isJobs)
+{
+    var history = Model.JobHistory;
+    <form asp-action="Index" method="get" class="tool-surface mb-3">
+        <input type="hidden" name="viewMode" value="jobs" />
+        <input type="hidden" name="jobSortBy" value="@Model.JobSortBy" />
+        <input type="hidden" name="jobSortDirection" value="@Model.JobSortDirection" />
+        <div class="library-filter-grid">
+            <div>
+                <label class="form-label" for="scope">Visibility</label>
+                <select class="form-select" id="scope" name="scope">
+                    <option value="all" selected="@(Model.Scope == "all")">Visible to me</option>
+                    <option value="mine" selected="@(Model.Scope == "mine")">Mine</option>
+                    <option value="public" selected="@(Model.Scope == "public")">Public</option>
+                </select>
+            </div>
+            <div class="library-filter-actions">
+                <button type="submit" class="btn btn-primary">Apply</button>
+                <a asp-action="Index" asp-route-viewMode="jobs" asp-route-scope="all" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </div>
+    </form>
+
+    <section class="tool-surface">
+        <div class="section-heading">
+            <h2>Job History</h2>
+            <span class="text-muted small">@history.TotalCount.ToString("N0") runs</span>
+        </div>
+        @if (history.Items.Count == 0)
+        {
+            <p class="text-muted mb-0">No jobs match this view yet.</p>
+        }
+        else
+        {
+            <div class="table-surface">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>@SortLink("date", "Date Run")</th>
+                            <th>@SortLink("user", "User")</th>
+                            <th>@SortLink("product", "Products")</th>
+                            <th>@SortLink("fileCount", "Files")</th>
+                            <th>@SortLink("status", "Status")</th>
+                            <th>@SortLink("directive", "Directive")</th>
+                            <th>@SortLink("duration", "Duration")</th>
+                            <th>Visibility</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var job in history.Items)
+                    {
+                        var canEditVisibility = string.Equals(job.UserEmail, Model.CurrentUserEmail, StringComparison.OrdinalIgnoreCase)
+                            && job.FirstProductParseJobId is int;
+                        var targetVisibility = job.IsPublic ? "false" : "true";
+                        var isFailed = string.Equals(job.Status, "Failed", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(job.Status, "RejectedCatalog", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(job.Status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+                        var isSucceeded = string.Equals(job.Status, "Succeeded", StringComparison.OrdinalIgnoreCase);
+                        var statusClass = isFailed ? "failed" : isSucceeded ? "succeeded" : "pending";
+                        var statsRowId = $"job-stats-{job.ToolJobId}";
+                        <tr>
+                            <td>
+                                <strong>#@job.ToolJobId</strong>
+                                <div class="text-muted small">@job.CreatedUtc.ToLocalTime().ToString("g")</div>
+                            </td>
+                            <td>@job.UserEmail</td>
+                            <td>
+                                <strong>@job.ProductCount</strong>
+                                @if (!string.IsNullOrWhiteSpace(job.ProductNames))
+                                {
+                                    <div class="text-muted small job-history-long">@job.ProductNames</div>
+                                }
+                            </td>
+                            <td>
+                                <strong>@job.FileCount</strong>
+                                @if (!string.IsNullOrWhiteSpace(job.OriginalFileNames))
+                                {
+                                    <div class="text-muted small job-history-long">@job.OriginalFileNames</div>
+                                }
+                            </td>
+                            <td>
+                                <button type="button"
+                                        class="job-chip status @statusClass job-status-toggle"
+                                        aria-expanded="false"
+                                        aria-controls="@statsRowId"
+                                        data-job-stats-toggle="@statsRowId">
+                                    @job.Status
+                                </button>
+                            </td>
+                            <td>@(job.DirectiveName ?? "Unknown")@(job.DirectiveVersion is int version ? $" v{version}" : "")</td>
+                            <td>@FormatDuration(job.DurationMs)</td>
+                            <td><span class="job-chip @(job.IsPublic ? "public" : "private")">@(job.IsPublic ? "Public" : "Private")</span></td>
+                            <td class="text-end">
+                                <div class="history-row-actions">
+                                    <a asp-action="Job" asp-route-id="@job.ToolJobId" class="btn btn-sm btn-outline-primary">Open</a>
+                                    @if (canEditVisibility)
+                                    {
+                                        <form asp-action="UpdateJobVisibility" asp-route-id="@job.FirstProductParseJobId" method="post" class="visibility-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="isPublic" value="@targetVisibility" />
+                                            <input type="hidden" name="scope" value="@Model.Scope" />
+                                            <input type="hidden" name="viewMode" value="jobs" />
+                                            <input type="hidden" name="jobPage" value="@history.Page" />
+                                            <input type="hidden" name="jobSortBy" value="@Model.JobSortBy" />
+                                            <input type="hidden" name="jobSortDirection" value="@Model.JobSortDirection" />
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">Make @(job.IsPublic ? "private" : "public")</button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        <tr id="@statsRowId" class="job-stats-row" hidden>
+                            <td colspan="9">
+                                <div class="job-stats-panel">
+                                    <dl>
+                                        <dt>Run</dt>
+                                        <dd>#@job.ToolJobId</dd>
+                                        <dt>Created</dt>
+                                        <dd>@job.CreatedUtc.ToLocalTime().ToString("g")</dd>
+                                        <dt>Completed</dt>
+                                        <dd>@(job.CompletedUtc?.ToLocalTime().ToString("g") ?? "Not completed")</dd>
+                                        <dt>Duration</dt>
+                                        <dd>@FormatDuration(job.DurationMs, "Not available")</dd>
+                                        <dt>Tokens</dt>
+                                        <dd>@(job.InputTokens?.ToString("N0") ?? "?") in / @(job.OutputTokens?.ToString("N0") ?? "?") out</dd>
+                                        <dt>Provider</dt>
+                                        <dd>@(job.AiProviderName ?? "Unknown")@(string.IsNullOrWhiteSpace(job.AiProviderModelName) ? "" : $" ({job.AiProviderModelName})")</dd>
+                                        <dt>Directive</dt>
+                                        <dd>@(job.DirectiveName ?? "Unknown")@(job.DirectiveVersion is int statsVersion ? $" v{statsVersion}" : "")</dd>
+                                        <dt>Files</dt>
+                                        <dd>@(job.OriginalFileNames ?? "None recorded")</dd>
+                                        <dt>Products</dt>
+                                        <dd>@job.ProductCount@(string.IsNullOrWhiteSpace(job.ProductNames) ? "" : $": {job.ProductNames}")</dd>
+                                        <dt>Messages</dt>
+                                        <dd>
+                                            @if (string.IsNullOrWhiteSpace(job.ErrorMessage))
+                                            {
+                                                <span class="text-muted">No failure messages recorded.</span>
+                                            }
+                                            else
+                                            {
+                                                <pre class="job-stats-error">@job.ErrorMessage</pre>
+                                            }
+                                        </dd>
+                                    </dl>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            <nav class="pagination-row" aria-label="Job history pages">
+                <span class="text-muted small">Page @history.Page of @history.TotalPages</span>
+                <div class="page-actions">
+                    <a asp-action="Index"
+                       asp-route-viewMode="jobs"
+                       asp-route-scope="@Model.Scope"
+                       asp-route-jobPage="@(history.Page - 1)"
+                       asp-route-jobSortBy="@Model.JobSortBy"
+                       asp-route-jobSortDirection="@Model.JobSortDirection"
+                       class="btn btn-sm btn-outline-secondary @(history.Page <= 1 ? "disabled" : "")">Previous</a>
+                    <a asp-action="Index"
+                       asp-route-viewMode="jobs"
+                       asp-route-scope="@Model.Scope"
+                       asp-route-jobPage="@(history.Page + 1)"
+                       asp-route-jobSortBy="@Model.JobSortBy"
+                       asp-route-jobSortDirection="@Model.JobSortDirection"
+                       class="btn btn-sm btn-outline-secondary @(history.Page >= history.TotalPages ? "disabled" : "")">Next</a>
+                </div>
+            </nav>
+        }
+    </section>
+}
+
+@functions {
+    private IHtmlContent SortLink(string sortBy, string label)
+    {
+        var isCurrent = string.Equals(Model.JobSortBy, sortBy, StringComparison.OrdinalIgnoreCase);
+        var nextDirection = isCurrent && string.Equals(Model.JobSortDirection, "asc", StringComparison.OrdinalIgnoreCase)
+            ? "desc"
+            : "asc";
+        var indicator = isCurrent
+            ? string.Equals(Model.JobSortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? " ^" : " v"
+            : string.Empty;
+        return Html.ActionLink(
+            label + indicator,
+            "Index",
+            new
+            {
+                viewMode = "jobs",
+                scope = Model.Scope,
+                jobPage = 1,
+                jobSortBy = sortBy,
+                jobSortDirection = nextDirection
+            },
+            new { @class = "sort-link" });
+    }
+
+    private static string FormatDuration(int? durationMs, string fallback = "Pending")
+    {
+        if (durationMs is null)
+        {
+            return fallback;
+        }
+
+        var totalSeconds = Math.Max(0, (int)Math.Round(durationMs.Value / 1000.0, MidpointRounding.AwayFromZero));
+        var hours = totalSeconds / 3600;
+        var minutes = totalSeconds % 3600 / 60;
+        var seconds = totalSeconds % 60;
+
+        if (hours > 0)
+        {
+            return $"{hours} hr {minutes} min";
+        }
+
+        if (minutes > 0)
+        {
+            return $"{minutes} min {seconds} sec";
+        }
+
+        return $"{seconds} sec";
+    }
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        document.querySelectorAll('[data-library-toggle]').forEach(button => {
+            button.addEventListener('click', () => {
+                const row = document.getElementById(button.dataset.libraryToggle);
+                if (!row) {
+                    return;
+                }
+
+                const isExpanded = button.getAttribute('aria-expanded') === 'true';
+                button.setAttribute('aria-expanded', (!isExpanded).toString());
+                row.hidden = isExpanded;
+
+            });
+        });
+
+        document.querySelectorAll('[data-job-stats-toggle]').forEach(button => {
+            button.addEventListener('click', () => {
+                const row = document.getElementById(button.dataset.jobStatsToggle);
+                if (!row) {
+                    return;
+                }
+
+                const isExpanded = button.getAttribute('aria-expanded') === 'true';
+                button.setAttribute('aria-expanded', (!isExpanded).toString());
+                row.hidden = isExpanded;
+            });
+        });
+    </script>
+}

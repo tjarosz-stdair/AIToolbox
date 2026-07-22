@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Toolbox</title>
+  <link rel="stylesheet" href="dist/popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="title-row">
+        <img id="titleIcon" class="title-icon" src="icons/icon-32.png" alt="" aria-hidden="true">
+        <h1 id="pageTitle">Toolbox</h1>
+        <span id="versionLabel" class="version-label">v0.2.25</span>
+      </div>
+      <div class="header-actions">
+        <div class="nav-actions">
+          <button id="backButton" type="button" class="text-link hidden">&larr; Back</button>
+          <span id="navSeparator" class="nav-separator hidden" aria-hidden="true">|</span>
+          <button id="openWebButton" type="button" class="text-link hidden">Open Web &rarr;</button>
+        </div>
+        <div class="auth-row">
+          <button id="signInButton" type="button" class="text-link">Sign in</button>
+          <button id="signOutButton" type="button" class="text-link hidden">Sign out</button>
+        </div>
+        <span id="authStatus" class="auth-status" aria-live="polite"></span>
+      </div>
+    </header>
+    <section id="toolList" class="tool-list">
+      <button id="openParser" type="button" class="tool-button" disabled>
+        <strong>Product Parser</strong>
+        <span id="openParserHint">Sign in to parse, look up, copy.</span>
+      </button>
+      <button id="openJobs" type="button" class="tool-button" disabled>
+        <strong>Jobs <span id="jobsCountBadge" class="inline-badge hidden">0</span></strong>
+        <span id="openJobsHint">Sign in to view active jobs.</span>
+      </button>
+    </section>
+    <section id="jobsView" class="hidden">
+      <div class="panel">
+        <div class="jobs-toolbar">
+          <span id="jobsUpdated" class="muted">Not refreshed yet.</span>
+          <button id="refreshJobsButton" type="button" class="text-link">Refresh</button>
+        </div>
+        <div id="jobsList" class="library-results"></div>
+      </div>
+    </section>
+    <section id="parserView" class="hidden">
+      <div class="tab-row" role="tablist">
+        <button id="parseTabButton" type="button" class="tab-button active">Parse</button>
+        <button id="libraryTabButton" type="button" class="tab-button">Library</button>
+        <button id="detailTabButton" type="button" class="tab-button">Product</button>
+      </div>
+
+      <section id="parsePanel" class="panel">
+        <label id="dropZone" class="drop-zone">
+          <input id="fileInput" type="file" accept="application/pdf" multiple hidden>
+          <span>Drop PDFs here or click to browse</span>
+        </label>
+        <label class="field-label">
+          Upload intent
+          <select id="parseMode">
+            <option value="sameProduct">Same product</option>
+            <option value="separateProducts">Separate products</option>
+            <option value="catalog">Catalog</option>
+          </select>
+        </label>
+        <label class="field-label">
+          User notes
+          <textarea id="userNotes" rows="4" placeholder="Optional product line, pages, supplier hints, fields of interest, or exclusions."></textarea>
+        </label>
+        <label class="visibility-toggle">
+          <input id="publicToggle" type="checkbox" checked>
+          Share this parse with authorized users
+        </label>
+      </section>
+
+      <section id="libraryPanel" class="panel hidden">
+        <form id="librarySearchForm" class="search-row">
+          <input id="librarySearch" type="search" placeholder="Search products, model numbers, suppliers">
+          <button type="submit">Search</button>
+        </form>
+        <div id="libraryResults" class="library-results"></div>
+      </section>
+
+      <section id="detailPanel" class="panel hidden">
+        <div id="productHeader" class="product-header"></div>
+        <button id="importToZohoButton" type="button" class="secondary-action hidden">Import to Zoho</button>
+        <div id="fields" class="fields"></div>
+      </section>
+    </section>
+    <div id="status" class="status"></div>
+  </main>
+  <script type="module" src="dist/popup.js"></script>
+</body>
+</html>

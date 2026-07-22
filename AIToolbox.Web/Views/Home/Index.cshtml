@@ -1,0 +1,31 @@
+@model IReadOnlyList<ToolDefinition>
+
+@{
+    ViewData["Title"] = "AI Toolbox";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>AI Toolbox</h1>
+        <p class="text-muted mb-0">Choose a tool to get started.</p>
+    </div>
+</div>
+
+<div class="tool-directory">
+    <a class="tool-directory-item" asp-controller="Compare" asp-action="Index">
+        <strong>AI Compare</strong>
+        <span>Send one prompt to multiple providers and compare the responses.</span>
+    </a>
+
+    @foreach (var tool in Model.Where(tool => !string.Equals(tool.ToolKey, "AICompare", StringComparison.OrdinalIgnoreCase)))
+    {
+        var href = tool.ToolKey.Equals("ProductParser", StringComparison.OrdinalIgnoreCase)
+            ? Url.Action("Index", "ProductParser")
+            : Url.Action("Index", "Home");
+        <a class="tool-directory-item" href="@href">
+            <strong>@tool.DisplayName</strong>
+            <span>@(string.IsNullOrWhiteSpace(tool.Description) ? "Configured tool." : tool.Description)</span>
+            <em>Available on the web and in the Chrome extension</em>
+        </a>
+    }
+</div>

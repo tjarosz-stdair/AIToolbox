@@ -1,0 +1,290 @@
+@model ParsedProductDetailViewModel
+@using Microsoft.AspNetCore.Html
+@using System.Text
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = Model.Product.ProductName ?? "Parsed Product";
+    using var document = JsonDocument.Parse(Model.Product.ProductDataJson);
+    var productRoot = document.RootElement;
+    var job = Model.Job;
+    var rawJson = JsonSerializer.Serialize(productRoot, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+    var sections = BuildSections(productRoot);
+}
+
+<div class="tool-nav mb-3">
+    <a asp-action="Index" asp-route-viewMode="new" class="btn btn-sm btn-outline-primary">New Parse</a>
+    <a asp-action="Index" asp-route-viewMode="jobs" asp-route-scope="all" class="btn btn-sm btn-outline-primary">Job History</a>
+    <a asp-action="Index" asp-route-viewMode="library" asp-route-scope="all" class="btn btn-sm btn-outline-primary">Product Library</a>
+</div>
+
+<div class="page-heading product-sticky-heading">
+    <div>
+        <h1>@(Model.Product.ProductName ?? "Parsed Product")</h1>
+        <p class="text-muted mb-0">Review extracted product data, parse metadata, and repeated parses.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<details class="tool-surface mb-3 product-metadata-details">
+    <summary>Parse Metadata</summary>
+    @if (job is null)
+    {
+        <p class="text-muted mb-0">No parse job metadata is available for this product.</p>
+    }
+    else
+    {
+        <dl class="metadata-grid mb-0">
+            <dt>Source PDF</dt>
+            <dd>@job.OriginalFileName</dd>
+            <dt>AI provider</dt>
+            <dd>@(job.AiProviderName ?? $"Provider #{job.AiProviderId}")@(string.IsNullOrWhiteSpace(job.AiProviderModelName) ? "" : $" ({job.AiProviderModelName})")</dd>
+            <dt>Directive</dt>
+            <dd>@(job.DirectiveName ?? $"Directive #{job.ToolDirectiveId}")@(job.DirectiveVersion is int version ? $" v{version}" : "")</dd>
+            <dt>Status</dt>
+            <dd>@job.Status</dd>
+            <dt>Duration</dt>
+            <dd>@(job.DurationMs is int durationMs ? $"{durationMs:N0} ms" : "")</dd>
+            <dt>Tokens</dt>
+            <dd>@(job.InputTokens?.ToString("N0") ?? "?") in / @(job.OutputTokens?.ToString("N0") ?? "?") out</dd>
+            <dt>File size</dt>
+            <dd>@((job.FileSizeBytes / 1024m / 1024m).ToString("N2")) MB</dd>
+            <dt>Created</dt>
+            <dd>@job.CreatedUtc.ToLocalTime().ToString("g")</dd>
+            <dt>Completed</dt>
+            <dd>@(job.CompletedUtc?.ToLocalTime().ToString("g") ?? "")</dd>
+            @if (!string.IsNullOrWhiteSpace(job.ErrorMessage))
+            {
+                <dt>Error</dt>
+                <dd>@job.ErrorMessage</dd>
+            }
+        </dl>
+    }
+</details>
+
+<section class="tool-surface mb-3">
+    <div class="section-heading">
+        <h2>Versions</h2>
+    </div>
+    @if (Model.Versions.Count <= 1)
+    {
+        <p class="text-muted mb-0">No other parses for this product code/name are visible yet. Re-running the same PDF creates a new version instead of overwriting this one.</p>
+    }
+    else
+    {
+        <div class="table-surface">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th>Product</th>
+                        <th>Code</th>
+                        <th>Created</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var version in Model.Versions)
+                {
+                    <tr class="@(version.Id == Model.Product.Id ? "table-active" : "")">
+                        <td>@(version.Id == Model.Product.Id ? "Current" : $"Parse #{version.Id}")</td>
+                        <td>@(version.ProductName ?? "Unnamed product")</td>
+                        <td>@version.ProductCode</td>
+                        <td>@version.CreatedUtc.ToLocalTime().ToString("g")</td>
+                        <td class="text-end">
+                            @if (version.Id == Model.Product.Id)
+                            {
+                                <span class="text-muted small">Open</span>
+                            }
+                            else
+                            {
+                                <a asp-action="Product" asp-route-id="@version.Id" class="btn btn-sm btn-outline-primary">Open</a>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<partial name="_ParsedProductData" model="Model.Product" />
+
+@functions {
+    private static IHtmlContent RenderFieldControl(ProductDisplayField field)
+    {
+        var builder = new HtmlContentBuilder();
+        builder.AppendHtml(field.IsLong
+            ? $"""
+              <div class="copy-row">
+                  <textarea class="form-control product-long-field" rows="4" readonly>{HtmlEncode(field.Value)}</textarea>
+                  <button class="btn btn-outline-secondary copy-icon-button" type="button" title="Copy {HtmlEncode(field.Label)}" aria-label="Copy {HtmlEncode(field.Label)}" data-copy-neighbor>Copy</button>
+              </div>
+              """
+            : $"""
+              <div class="copy-row product-copy-row-compact">
+                  <input class="form-control" value="{HtmlEncode(field.Value)}" readonly />
+                  <button class="btn btn-outline-secondary copy-icon-button" type="button" title="Copy {HtmlEncode(field.Label)}" aria-label="Copy {HtmlEncode(field.Label)}" data-copy-neighbor>Copy</button>
+              </div>
+              """);
+        return builder;
+    }
+
+    private static IReadOnlyList<ProductDisplaySection> BuildSections(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        return root.EnumerateObject()
+            .Select(BuildSection)
+            .Where(section => section is not null)
+            .Cast<ProductDisplaySection>()
+            .ToList();
+    }
+
+    private static ProductDisplaySection? BuildSection(JsonProperty property)
+    {
+        var title = ToLabel(property.Name);
+        var value = property.Value;
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            var lines = FormatArray(value, "\n");
+            if (string.IsNullOrWhiteSpace(lines))
+            {
+                return null;
+            }
+
+            return new ProductDisplaySection
+            {
+                Title = title,
+                IsArray = true,
+                Lines = lines,
+                CommaDelimited = FormatArray(value, ", "),
+                TabDelimited = FormatArray(value, "\t"),
+                Rows = Math.Min(Math.Max(value.GetArrayLength(), 4), 12)
+            };
+        }
+
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            var fields = value.EnumerateObject()
+                .Select(child => new ProductDisplayField(ToLabel(child.Name), ValueToText(child.Value)))
+                .Where(field => !string.IsNullOrWhiteSpace(field.Value))
+                .ToList();
+
+            return fields.Count == 0
+                ? null
+                : new ProductDisplaySection { Title = title, Fields = fields };
+        }
+
+        var text = ValueToText(value);
+        return string.IsNullOrWhiteSpace(text)
+            ? null
+            : new ProductDisplaySection { Title = title, Fields = [new ProductDisplayField(title, text)] };
+    }
+
+    private static string ToLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Field";
+        }
+
+        var builder = new StringBuilder();
+        var previousWasLower = false;
+        foreach (var character in value.Trim())
+        {
+            if (character is '_' or '-')
+            {
+                builder.Append(' ');
+                previousWasLower = false;
+                continue;
+            }
+
+            if (char.IsUpper(character) && previousWasLower)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(character);
+            previousWasLower = char.IsLower(character) || char.IsDigit(character);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string ValueToText(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => "Yes",
+            JsonValueKind.False => "No",
+            JsonValueKind.Null => string.Empty,
+            JsonValueKind.Array => FormatArray(value, ", "),
+            JsonValueKind.Object => FormatObject(value),
+            _ => value.ToString()
+        };
+    }
+
+    private static string FormatArray(JsonElement value, string delimiter)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return ValueToText(value);
+        }
+
+        return string.Join(delimiter, value.EnumerateArray().Select(ValueToText).Where(text => !string.IsNullOrWhiteSpace(text)));
+    }
+
+    private static string FormatObject(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            return ValueToText(value);
+        }
+
+        return string.Join(Environment.NewLine, value.EnumerateObject().Select(property => $"{ToLabel(property.Name)}: {ValueToText(property.Value)}"));
+    }
+
+    private static string HtmlEncode(string value)
+    {
+        return System.Net.WebUtility.HtmlEncode(value);
+    }
+
+    private sealed class ProductDisplaySection
+    {
+        public string Title { get; init; } = string.Empty;
+        public bool IsArray { get; init; }
+        public string Lines { get; init; } = string.Empty;
+        public string CommaDelimited { get; init; } = string.Empty;
+        public string TabDelimited { get; init; } = string.Empty;
+        public int Rows { get; init; } = 4;
+        public IReadOnlyList<ProductDisplayField> Fields { get; init; } = [];
+    }
+
+    private sealed class ProductDisplayField
+    {
+        public ProductDisplayField(string label, string value)
+        {
+            Label = label;
+            Value = value;
+            IsLong = value.Length > 120
+                || label.Contains("description", StringComparison.OrdinalIgnoreCase)
+                || label.Contains("notes", StringComparison.OrdinalIgnoreCase)
+                || label.Contains("summary", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public string Label { get; }
+        public string Value { get; }
+        public bool IsLong { get; }
+    }
+}

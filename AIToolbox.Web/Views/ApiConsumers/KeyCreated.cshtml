@@ -1,0 +1,26 @@
+@model ApiConsumerKeyCreatedViewModel
+
+@{
+    ViewData["Title"] = "API Key Created";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>API Key Created</h1>
+        <p class="text-muted mb-0">This key is shown once and is not stored in plaintext.</p>
+    </div>
+</div>
+
+<div class="alert alert-warning">Store this key now. After leaving this page, only the prefix will be visible.</div>
+
+<div class="settings-panel">
+    <label class="form-label">Consumer</label>
+    <div class="mb-3"><strong>@Model.Consumer.Name</strong></div>
+    <label class="form-label">Key prefix</label>
+    <div class="mb-3"><code>@Model.KeyPrefix</code></div>
+    <label class="form-label">API key</label>
+    <textarea class="form-control font-monospace" rows="3" readonly>@Model.RawKey</textarea>
+    <div class="mt-3">
+        <a asp-action="Detail" asp-route-id="@Model.Consumer.Id" class="btn btn-primary">Done</a>
+    </div>
+</div>

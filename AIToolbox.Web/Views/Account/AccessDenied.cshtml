@@ -1,0 +1,17 @@
+@{
+    ViewData["Title"] = "Access denied";
+}
+
+<div class="tool-surface narrow">
+    <h1>Access denied</h1>
+    <p class="text-muted">Your Microsoft 365 account signed in successfully, but it is not currently granted access to this app.</p>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <dl class="access-details mb-0">
+            <dt>Signed in as</dt>
+            <dd>@User.GetEmailAddress()</dd>
+            <dt>Tenant ID</dt>
+            <dd>@(User.GetTenantId() ?? "Not present in claims")</dd>
+        </dl>
+    }
+</div>

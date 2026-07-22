@@ -1,0 +1,15 @@
+{
+  "name": "aitoolbox-chrome-extension",
+  "version": "0.2.25",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/background.ts src/popup.ts src/options.ts src/zoho-crm-content.ts --bundle --outdir=dist --format=esm --target=chrome120"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "^4.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

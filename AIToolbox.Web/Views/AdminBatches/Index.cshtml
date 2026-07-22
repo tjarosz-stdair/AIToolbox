@@ -1,0 +1,44 @@
+@model IReadOnlyList<AiBatchJob>
+
+@{
+    ViewData["Title"] = "Batch Jobs";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Batch Jobs</h1>
+        <p class="text-muted mb-0">Review service-submitted batch jobs, status, history, and provider state.</p>
+    </div>
+</div>
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Job</th>
+                <th>Consumer</th>
+                <th>Tool</th>
+                <th>Provider</th>
+                <th>Status</th>
+                <th>Requests</th>
+                <th>Created</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var job in Model)
+        {
+            <tr>
+                <td><strong>#@job.Id</strong><div class="text-muted small">@job.JobType</div></td>
+                <td>@(job.ConsumerName ?? job.UserEmail)</td>
+                <td>@job.ToolKey</td>
+                <td>@job.AiProviderName</td>
+                <td><span class="badge @(job.Status is "Succeeded" or "PartiallySucceeded" ? "text-bg-success" : job.Status is "Failed" or "Expired" or "Cancelled" ? "text-bg-danger" : "text-bg-secondary")">@job.Status</span></td>
+                <td>@job.SucceededRequestCount / @job.TotalRequestCount</td>
+                <td>@job.CreatedUtc.ToLocalTime().ToString("g")</td>
+                <td class="text-end"><a asp-action="Detail" asp-route-id="@job.Id" class="btn btn-sm btn-outline-primary">Open</a></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
