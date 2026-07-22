@@ -14,6 +14,11 @@ type AuthTokenResult = {
   accountUsername?: string;
 };
 
+type AuthTokenCache = AuthTokenResult & {
+  expiresAt?: number;
+  refreshToken?: string;
+};
+
 async function getAccessToken(): Promise<AuthTokenResult> {
   const settings = await getSettings();
   if (!settings.clientId || !settings.scope) {
@@ -23,6 +28,11 @@ async function getAccessToken(): Promise<AuthTokenResult> {
   const cached = await getCachedAccessToken();
   if (cached) {
     return cached;
+  }
+
+  const refreshed = await refreshAccessToken();
+  if (refreshed) {
+    return refreshed;
   }
 
   const redirectUri = chrome.identity.getRedirectURL();
@@ -40,9 +50,14 @@ async function getAccessToken(): Promise<AuthTokenResult> {
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
 
   const redirectUrl = await chrome.identity.launchWebAuthFlow({ url: authorizeUrl.toString(), interactive: true });
-  const code = new URL(redirectUrl).searchParams.get("code");
-  const error = new URL(redirectUrl).searchParams.get("error_description")
-    || new URL(redirectUrl).searchParams.get("error");
+  if (!redirectUrl) {
+    throw new Error("Microsoft sign-in did not return a redirect URL.");
+  }
+
+  const redirect = new URL(redirectUrl);
+  const code = redirect.searchParams.get("code");
+  const error = redirect.searchParams.get("error_description")
+    || redirect.searchParams.get("error");
   if (!code) {
     throw new Error(error || "Microsoft sign-in did not return an authorization code.");
   }
@@ -70,12 +85,7 @@ async function getAccessToken(): Promise<AuthTokenResult> {
     accountName: asString(identity?.name),
     accountUsername: asString(identity?.preferred_username || identity?.email || identity?.upn)
   };
-  await chrome.storage.local.set({
-    [authCacheKey]: {
-      ...result,
-      expiresAt: Date.now() + Math.max(0, Number(tokenJson.expires_in || 0) - 60) * 1000
-    }
-  });
+  await saveAuthCache(tokenJson, result);
   void refreshJobs(false);
   return result;
 }
@@ -89,7 +99,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "getAuthState") {
-    getCachedAccessToken()
+    getCurrentAuthState()
       .then(result => sendResponse({ signedIn: Boolean(result), accountName: result?.accountName, accountUsername: result?.accountUsername }))
       .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }));
     return true;
@@ -151,7 +161,7 @@ void initializeJobMonitor();
 
 async function getCachedAccessToken(): Promise<AuthTokenResult | null> {
   const stored = await chrome.storage.local.get(authCacheKey);
-  const cached = stored[authCacheKey] as (AuthTokenResult & { expiresAt?: number }) | undefined;
+  const cached = stored[authCacheKey] as AuthTokenCache | undefined;
   if (!cached?.token || !cached.expiresAt || cached.expiresAt <= Date.now()) {
     return null;
   }
@@ -161,6 +171,62 @@ async function getCachedAccessToken(): Promise<AuthTokenResult | null> {
     accountName: cached.accountName,
     accountUsername: cached.accountUsername
   };
+}
+
+async function getCurrentAuthState(): Promise<AuthTokenResult | null> {
+  return await getCachedAccessToken() || await refreshAccessToken();
+}
+
+async function refreshAccessToken(): Promise<AuthTokenResult | null> {
+  const settings = await getSettings();
+  const stored = await chrome.storage.local.get(authCacheKey);
+  const cached = stored[authCacheKey] as AuthTokenCache | undefined;
+  if (!cached?.refreshToken) {
+    return null;
+  }
+
+  const scopes = uniqueScopes([settings.scope, "openid", "profile", "email", "offline_access"]).join(" ");
+  const tokenResponse = await fetch(`${settings.authority.replace(/\/$/, "")}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: settings.clientId,
+      grant_type: "refresh_token",
+      refresh_token: cached.refreshToken,
+      scope: scopes
+    })
+  });
+  const tokenJson = await tokenResponse.json();
+  if (!tokenResponse.ok) {
+    if (tokenJson.error === "invalid_grant") {
+      await chrome.storage.local.remove(authCacheKey);
+    }
+
+    return null;
+  }
+
+  const identity = parseJwtPayload(tokenJson.id_token);
+  const result = {
+    token: tokenJson.access_token as string,
+    accountName: asString(identity?.name) || cached.accountName,
+    accountUsername: asString(identity?.preferred_username || identity?.email || identity?.upn) || cached.accountUsername
+  };
+  await saveAuthCache(tokenJson, result, cached.refreshToken);
+  void refreshJobs(false);
+  return result;
+}
+
+async function saveAuthCache(
+  tokenJson: Record<string, unknown>,
+  result: AuthTokenResult,
+  fallbackRefreshToken?: string): Promise<void> {
+  await chrome.storage.local.set({
+    [authCacheKey]: {
+      ...result,
+      expiresAt: Date.now() + Math.max(0, Number(tokenJson.expires_in || 0) - 60) * 1000,
+      refreshToken: asString(tokenJson.refresh_token) || fallbackRefreshToken
+    } satisfies AuthTokenCache
+  });
 }
 
 async function signOut(): Promise<void> {
@@ -183,7 +249,7 @@ async function getStoredJobsSnapshot(): Promise<JobsSnapshot> {
 }
 
 async function refreshJobs(notify: boolean): Promise<JobsSnapshot> {
-  const token = await getCachedAccessToken();
+  const token = await getCurrentAuthState();
   if (!token) {
     await chrome.storage.local.set({ [jobsSnapshotKey]: emptyJobsSnapshot });
     await setJobBadge(0);

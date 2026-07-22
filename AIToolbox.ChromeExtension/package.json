@@ -9,6 +9,7 @@
     "@azure/msal-browser": "^4.0.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.2.2",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.0"
   }
