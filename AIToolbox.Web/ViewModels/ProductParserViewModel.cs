@@ -12,10 +12,10 @@ public sealed class ProductParserViewModel
     [Display(Name = "Share this parse with authorized users")]
     public bool IsPublic { get; set; } = true;
 
-    [Display(Name = "Upload intent")]
+    [Display(Name = "Upload Intent")]
     public string ParseMode { get; set; } = "sameProduct";
 
-    [Display(Name = "User notes")]
+    [Display(Name = "Additional Directives")]
     public string? UserNotes { get; set; }
 
     [Display(Name = "Directive")]

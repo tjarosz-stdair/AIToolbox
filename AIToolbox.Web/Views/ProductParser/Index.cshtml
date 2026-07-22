@@ -84,7 +84,15 @@
             <div class="form-text">Your selected directive is remembered for future product parses on this browser.</div>
         </div>
 
-        <div class="tool-option-grid mt-3">
+        <div class="mt-3">
+            <div class="field-label-row justify-content-start">
+                <span class="form-label mb-0">Upload Intent</span>
+                <span class="inline-help-hint"
+                      title="Same product merges all selected PDFs into one product. Separate products creates one product per PDF. Catalog extracts up to 100 products from a narrow catalog.">?</span>
+            </div>
+        </div>
+
+        <div class="tool-option-grid">
             <label class="tool-option">
                 <input asp-for="ParseMode" type="radio" value="sameProduct" checked="@(Model.ParseMode == "sameProduct")" />
                 <span>
@@ -110,8 +118,8 @@
 
         <div class="mt-3">
             <label asp-for="UserNotes" class="form-label"></label>
-            <textarea asp-for="UserNotes" class="form-control" rows="4" placeholder="Optional context: product line, pages, supplier hints, fields to focus on, or exclusions."></textarea>
-            <div class="form-text">Notes add context for this parse but do not override the admin directive.</div>
+            <textarea asp-for="UserNotes" class="form-control" rows="4" placeholder="Optional extra guidance: product line, pages, supplier hints, fields to focus on, or exclusions."></textarea>
+            <div class="form-text">Additional directives supplement this parse but do not override the admin directive.</div>
         </div>
 
         <div class="form-check visibility-check mt-3 mb-3">

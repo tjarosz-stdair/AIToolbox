@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Toolbox</title>
-  <link rel="stylesheet" href="dist/popup.css">
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main>
@@ -12,7 +12,7 @@
       <div class="title-row">
         <img id="titleIcon" class="title-icon" src="icons/icon-32.png" alt="" aria-hidden="true">
         <h1 id="pageTitle">Toolbox</h1>
-        <span id="versionLabel" class="version-label">v0.2.25</span>
+        <span id="versionLabel" class="version-label">v0.2.26</span>
       </div>
       <div class="header-actions">
         <div class="nav-actions">
@@ -59,7 +59,10 @@
           <span>Drop PDFs here or click to browse</span>
         </label>
         <label class="field-label">
-          Upload intent
+          <span class="label-with-help">
+            Upload Intent
+            <span class="help-hint" title="Same product merges all selected PDFs into one product. Separate products creates one product per PDF. Catalog extracts up to 100 products from a narrow catalog.">?</span>
+          </span>
           <select id="parseMode">
             <option value="sameProduct">Same product</option>
             <option value="separateProducts">Separate products</option>
@@ -67,8 +70,11 @@
           </select>
         </label>
         <label class="field-label">
-          User notes
-          <textarea id="userNotes" rows="4" placeholder="Optional product line, pages, supplier hints, fields of interest, or exclusions."></textarea>
+          <span class="label-with-help">
+            Additional Directives
+            <span class="help-hint" title="Optional extra guidance for this parse, such as product line, pages, supplier hints, fields of interest, or exclusions. These supplement but do not override the admin directive.">?</span>
+          </span>
+          <textarea id="userNotes" rows="4" placeholder="Optional extra guidance: product line, pages, supplier hints, fields of interest, or exclusions."></textarea>
         </label>
         <label class="visibility-toggle">
           <input id="publicToggle" type="checkbox" checked>

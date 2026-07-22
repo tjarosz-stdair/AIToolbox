@@ -1,6 +1,6 @@
 {
   "name": "aitoolbox-chrome-extension",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "private": true,
   "scripts": {
     "build": "esbuild src/background.ts src/popup.ts src/options.ts src/zoho-crm-content.ts --bundle --outdir=dist --format=esm --target=chrome120"
