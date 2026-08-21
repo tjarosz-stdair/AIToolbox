@@ -10,8 +10,10 @@ namespace AIToolbox.Web.Services;
 /// <summary>
 /// Orchestrates one chat turn for the picsearch surface: session-token validation (Part 2),
 /// context binding and reset triggers (Part 4.5.5/4.5.6), the MCP tool-calling loop (Part 3 /
-/// 4.5.1), and conversation/usage persistence (Part 4.5.3/4.5.8). Degraded-tier detection and
-/// P21 Toolbox's own budget-exhaustion signal (Part 5) are not wired in yet — sequenced as the
+/// 4.5.1), and conversation/usage persistence (Part 4.5.3/4.5.8). A valid session token is
+/// required — there is no anonymous fallback, per P21 Toolbox's own session-token contract (§6)
+/// and to avoid every unauthenticated caller colliding on one shared conversation identity.
+/// P21 Toolbox's own budget-exhaustion signal (Part 5.1) is not wired in yet — sequenced as the
 /// next slice.
 /// </summary>
 public sealed class PicSearchChatService : IPicSearchChatService
@@ -28,6 +30,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
     private readonly IAiProviderRepository _providers;
     private readonly IP21McpClientFactory _mcpClientFactory;
     private readonly IAiChatClientFactory _chatClientFactory;
+    private readonly IUiCapabilityProvider _uiCapabilities;
     private readonly ILogger<PicSearchChatService> _logger;
 
     public PicSearchChatService(
@@ -38,6 +41,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
         IAiProviderRepository providers,
         IP21McpClientFactory mcpClientFactory,
         IAiChatClientFactory chatClientFactory,
+        IUiCapabilityProvider uiCapabilities,
         ILogger<PicSearchChatService> logger)
     {
         _sessionTokens = sessionTokens;
@@ -47,21 +51,40 @@ public sealed class PicSearchChatService : IPicSearchChatService
         _providers = providers;
         _mcpClientFactory = mcpClientFactory;
         _chatClientFactory = chatClientFactory;
+        _uiCapabilities = uiCapabilities;
         _logger = logger;
     }
 
     public async Task<PicSearchTurnResult> SubmitTurnAsync(PicSearchTurnRequest request, CancellationToken cancellationToken = default)
     {
         var tokenResult = await _sessionTokens.ValidateAsync(request.SessionToken, cancellationToken);
-        if (tokenResult.Present && !tokenResult.IsValid)
+
+        // Anonymous access is removed, not degraded-and-allowed: P21 Toolbox's own session-token
+        // contract (§6) says anonymous AI access isn't supported in v1 "by construction," and
+        // allowing it here meant every anonymous caller collided on one "anonymous" identity,
+        // sharing a single conversation row (and its transcript) per context key.
+        if (!tokenResult.Present)
         {
-            // A PRESENT but INVALID token is the fabricated-token spend-abuse scenario (Part
-            // 2.1) — reject outright, before any AI-provider-spending work happens.
-            _logger.LogWarning("Rejected picsearch chat turn: session token present but invalid ({Reason}).", tokenResult.RejectReason);
-            return Failure(null, false, $"Session token rejected ({tokenResult.RejectReason}).");
+            return Failure(
+                PicSearchErrorCode.SessionTokenRequired,
+                "A valid P21 Toolbox session token is required to use this chat.",
+                sessionTokenPresent: false,
+                sessionTokenValid: false);
         }
 
-        var sub = tokenResult.IsValid ? tokenResult.Sub! : "anonymous";
+        if (!tokenResult.IsValid)
+        {
+            // Present but INVALID is the fabricated-token spend-abuse scenario (Part 2.1) —
+            // reject outright, before any AI-provider-spending work happens.
+            _logger.LogWarning("Rejected picsearch chat turn: session token present but invalid ({Reason}).", tokenResult.RejectReason);
+            return Failure(
+                PicSearchErrorCode.SessionTokenRejected,
+                $"Session token rejected ({tokenResult.RejectReason}).",
+                sessionTokenPresent: true,
+                sessionTokenValid: false);
+        }
+
+        var sub = tokenResult.Sub!;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // Admin-controlled availability + provider selection for this surface, reusing the
@@ -72,13 +95,21 @@ public sealed class PicSearchChatService : IPicSearchChatService
         var tool = await _platform.GetToolAsync(ToolKey, cancellationToken);
         if (tool is null || !tool.IsEnabled || tool.ActiveProviderId is null)
         {
-            return Failure(sub, tokenResult.IsValid, "The chat assistant isn't configured yet. An admin needs to set an active AI provider for 'PicSearchChat' in Admin > Tools.");
+            return Failure(
+                PicSearchErrorCode.NotConfigured,
+                "The chat assistant isn't configured yet. An admin needs to set an active AI provider for 'PicSearchChat' in Admin > Tools.",
+                sessionTokenPresent: true,
+                sessionTokenValid: true);
         }
 
         var provider = await _providers.GetByIdAsync(tool.ActiveProviderId.Value, cancellationToken);
         if (provider is null || !provider.IsEnabled)
         {
-            return Failure(sub, tokenResult.IsValid, "The AI provider configured for the chat assistant is missing or disabled.");
+            return Failure(
+                PicSearchErrorCode.NotConfigured,
+                "The AI provider configured for the chat assistant is missing or disabled.",
+                sessionTokenPresent: true,
+                sessionTokenValid: true);
         }
 
         string? resetMessage = null;
@@ -121,14 +152,18 @@ public sealed class PicSearchChatService : IPicSearchChatService
         ChatResponse response;
         try
         {
-            mcpClient = await _mcpClientFactory.ConnectAsync(Surface, tokenResult.IsValid ? request.SessionToken : null, cancellationToken);
+            mcpClient = await _mcpClientFactory.ConnectAsync(Surface, request.SessionToken, cancellationToken);
             var mcpTools = await _mcpClientFactory.GetToolsAsync(mcpClient, conversation.Id.ToString(), cancellationToken);
+            var uiTools = await _uiCapabilities.GetToolsAsync(Surface, request.UiSurfaces, cancellationToken);
+
+            var tools = new List<AITool>(mcpTools.Cast<AITool>());
+            tools.AddRange(uiTools);
 
             var chatClient = _chatClientFactory.Create(provider);
             var chatOptions = new ChatOptions
             {
-                Instructions = BuildSystemPrompt(request.ContextKey),
-                Tools = mcpTools.Cast<AITool>().ToList()
+                Instructions = BuildSystemPrompt(request.ContextKey, request.UiSurfaces),
+                Tools = tools
             };
 
             var turnMessages = history.Append(userMessage).ToList();
@@ -138,7 +173,13 @@ public sealed class PicSearchChatService : IPicSearchChatService
         {
             _logger.LogWarning(ex, "PicSearch chat turn failed for conversation {ConversationId}.", conversation.Id);
             await _rollups.IncrementAsync(today, Surface, failureDelta: 1, cancellationToken: cancellationToken);
-            return Failure(sub, tokenResult.IsValid, "The assistant couldn't process that question right now. Please try again.", conversation.Id, resetMessage);
+            return Failure(
+                PicSearchErrorCode.TurnFailed,
+                "The assistant couldn't process that question right now. Please try again.",
+                sessionTokenPresent: true,
+                sessionTokenValid: true,
+                conversation.Id,
+                resetMessage);
         }
         finally
         {
@@ -171,14 +212,22 @@ public sealed class PicSearchChatService : IPicSearchChatService
             estimatedCostUsdDelta: estimatedCost,
             cancellationToken: cancellationToken);
 
+        var toolsUsed = response.Messages
+            .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
+            .Select(call => call.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         return new PicSearchTurnResult(
             conversation.Id,
             resetMessage is not null,
             resetMessage,
             response.Text,
-            tokenResult.Present,
-            tokenResult.IsValid,
-            null);
+            toolsUsed,
+            SessionTokenPresent: true,
+            SessionTokenValid: true,
+            Code: null,
+            ErrorMessage: null);
     }
 
     private async Task<Conversation> CreateConversationAsync(string sub, string contextKey, DateOnly today, CancellationToken cancellationToken)
@@ -246,14 +295,29 @@ public sealed class PicSearchChatService : IPicSearchChatService
         }
     }
 
-    private static string BuildSystemPrompt(string contextKey)
+    // Directive §5.6: surface-set changes never reset the conversation, but the model still
+    // needs to know what's currently open so it doesn't offer to navigate a screen that just
+    // closed. Restating the current set each turn (rather than diffing against a prior turn)
+    // is the deliberately simple version — Conversation/ConversationMessage carry no persisted
+    // "last known surfaces" field, so there is nothing to diff against across requests, and
+    // restating achieves the same practical effect: a closed surface simply stops being mentioned.
+    private static string BuildSystemPrompt(string contextKey, IReadOnlyList<string> uiSurfaces)
     {
+        var surfaceLine = uiSurfaces.Count == 0
+            ? "No additional screens are currently open — you can only answer from data, not navigate anywhere."
+            : $"Currently open screens available for navigation: {string.Join(", ", uiSurfaces)}.";
+
         return $"""
             You are a P21 product and parts assistant embedded in PIC Search.
             This conversation is bound to context '{contextKey}' — a specific order or customer.
             Only answer questions about this context. Always explicitly name the order or customer your answer refers to.
             If the user asks about a different order or customer than '{contextKey}', tell them you can't do that in this
             conversation and that they should start a new one for that context instead of guessing or mixing data.
+
+            You answer using data tools (MCP tools) first. Navigation (ui_-prefixed tools) is presentational only — it shows
+            the user something on their screen, it never returns product data. Never call a navigation tool expecting it to
+            answer a question; resolve the answer from a data tool first, then optionally navigate to show your work.
+            {surfaceLine}
             """;
     }
 
@@ -276,8 +340,23 @@ public sealed class PicSearchChatService : IPicSearchChatService
         return new ChatMessage(new ChatRole(stored.Role), contents);
     }
 
-    private static PicSearchTurnResult Failure(string? sub, bool sessionTokenValid, string errorMessage, int conversationId = 0, string? resetMessage = null)
+    private static PicSearchTurnResult Failure(
+        string code,
+        string errorMessage,
+        bool sessionTokenPresent,
+        bool sessionTokenValid,
+        int conversationId = 0,
+        string? resetMessage = null)
     {
-        return new PicSearchTurnResult(conversationId, resetMessage is not null, resetMessage, string.Empty, sub is not null, sessionTokenValid, errorMessage);
+        return new PicSearchTurnResult(
+            conversationId,
+            resetMessage is not null,
+            resetMessage,
+            string.Empty,
+            [],
+            sessionTokenPresent,
+            sessionTokenValid,
+            code,
+            errorMessage);
     }
 }

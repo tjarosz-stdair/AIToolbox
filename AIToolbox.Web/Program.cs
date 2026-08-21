@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using AIToolbox.Web.Authorization;
 using AIToolbox.Web.Configuration;
+using AIToolbox.Web.Controllers;
 using AIToolbox.Web.Data;
 using AIToolbox.Web.Security;
 using AIToolbox.Web.Services;
@@ -11,9 +12,11 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using System.Threading.RateLimiting;
 using Serilog;
 using Serilog.Events;
 using Serilog.Filters;
@@ -29,6 +32,7 @@ builder.Services.Configure<MicrosoftEntraOptions>(builder.Configuration.GetSecti
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
 builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));
 builder.Services.Configure<SessionTokenValidationOptions>(builder.Configuration.GetSection("SessionTokenValidation"));
+builder.Services.Configure<EmbedOptions>(builder.Configuration.GetSection("Embed"));
 
 var dataProtectionOptions = builder.Configuration.GetSection("DataProtection").Get<AIToolsDataProtectionOptions>()
     ?? new AIToolsDataProtectionOptions();
@@ -67,8 +71,10 @@ builder.Services.AddScoped<IMcpClientCredentialRepository, McpClientCredentialRe
 builder.Services.AddSingleton<IMcpAccessTokenProvider, McpAccessTokenProvider>();
 builder.Services.AddSingleton<IJwksCache, JwksCache>();
 builder.Services.AddSingleton<ISessionTokenValidator, SessionTokenValidator>();
+builder.Services.AddSingleton<IEmbedOriginResolver, EmbedOriginResolver>();
 builder.Services.AddScoped<IP21McpClientFactory, P21McpClientFactory>();
 builder.Services.AddScoped<IAiChatClientFactory, AiChatClientFactory>();
+builder.Services.AddSingleton<IUiCapabilityProvider, UiCapabilityProvider>();
 builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
 builder.Services.AddScoped<IRetentionSettingsRepository, RetentionSettingsRepository>();
 builder.Services.AddScoped<IConversationUsageRollupRepository, ConversationUsageRollupRepository>();
@@ -292,6 +298,22 @@ builder.Services.AddControllersWithViews(options =>
     options.Filters.Add(new AuthorizeFilter("ActiveUser"));
 });
 
+// The picsearch chat endpoint is [AllowAnonymous] against the global filter above (see its own
+// doc comment) — it is now the only unauthenticated, AI-provider-spending endpoint in the app,
+// so it gets its own per-IP rate limit rather than relying on any authenticated-user throttle.
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy(PicSearchChatController.RateLimiterPolicyName, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 10,
+                QueueLimit = 0
+            }));
+});
+
 var app = builder.Build();
 
 var sessionTokenOptions = app.Services.GetRequiredService<IOptions<SessionTokenValidationOptions>>().Value;
@@ -312,6 +334,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseMiddleware<FrameGuardMiddleware>();
 
 app.UseSerilogRequestLogging(options =>
 {
@@ -344,6 +367,7 @@ app.UseSerilogRequestLogging(options =>
 });
 
 app.UseCors("ChromeExtensionApi");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

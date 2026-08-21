@@ -1,0 +1,46 @@
+@model EmbedChatViewModel
+@{
+    ViewData["Title"] = "Chat";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/embed-chat.css" asp-append-version="true" />
+</head>
+<body>
+    <div
+        data-embed-chat
+        data-parent-origin="@Model.ExpectedParentOrigin"
+        data-max-message-length="@Model.MaxMessageLength"
+        data-preferred-width="@Model.PreferredWidth"
+        class="embed-root">
+
+        <div class="embed-header">
+            <div class="embed-context-chip" data-context-chip>Connecting&hellip;</div>
+            <div class="embed-surface-pills" data-surface-pills></div>
+        </div>
+
+        <div class="embed-banner" data-status-banner hidden></div>
+
+        <div class="embed-transcript" data-transcript></div>
+
+        <form class="embed-composer" data-composer-form>
+            <input
+                type="text"
+                class="embed-composer-input"
+                data-composer-input
+                maxlength="@Model.MaxMessageLength"
+                placeholder="Ask a question&hellip;"
+                disabled
+                autocomplete="off" />
+            <button type="submit" class="embed-composer-button" data-composer-button disabled>Send</button>
+        </form>
+    </div>
+
+    <script src="~/js/embed-chat.js" asp-append-version="true"></script>
+</body>
+</html>

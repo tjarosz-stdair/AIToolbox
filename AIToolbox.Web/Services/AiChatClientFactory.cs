@@ -20,6 +20,9 @@ public sealed class AiChatClientFactory : IAiChatClientFactory
         _loggerFactory = loggerFactory;
     }
 
+    private const string UiIntentNamePrefix = "ui_";
+    private const int MaxUiIntentsPerTurn = 2;
+
     public IChatClient Create(AiProvider provider)
     {
         var baseClient = new AiChatClient(
@@ -27,6 +30,11 @@ public sealed class AiChatClientFactory : IAiChatClientFactory
             _httpClientFactory,
             _secretProtector,
             _loggerFactory.CreateLogger<AiChatClient>());
+
+        // A fresh IChatClient (and so a fresh closure below) is built per turn — SubmitTurnAsync
+        // calls Create(...) once per SubmitTurnAsync call — so this counter naturally resets
+        // per turn with no explicit reset logic needed.
+        var uiIntentCallCount = 0;
 
         return new ChatClientBuilder(baseClient)
             .UseFunctionInvocation(_loggerFactory, configure: functionInvokingClient =>
@@ -40,6 +48,25 @@ public sealed class AiChatClientFactory : IAiChatClientFactory
                 // Toolbox's own per-conversation budget-exhaustion JSON-RPC error, code -32000)
                 // must not let the agent spin retrying it forever within one turn.
                 functionInvokingClient.MaximumConsecutiveErrorsPerRequest = 3;
+
+                // Directive §5.6: at most 2 UI-navigation intents per assistant turn, enforced
+                // here rather than relying on a broker-side backstop — without a cap the model
+                // could thrash the screen mid-answer. MCP data-tool calls are unaffected; only
+                // ui_-prefixed local functions are counted and capped.
+                functionInvokingClient.FunctionInvoker = async (context, cancellationToken) =>
+                {
+                    var isUiIntent = context.Function.Name.StartsWith(UiIntentNamePrefix, StringComparison.Ordinal);
+                    if (isUiIntent && ++uiIntentCallCount > MaxUiIntentsPerTurn)
+                    {
+                        return new Dictionary<string, object?>
+                        {
+                            ["status"] = "rejected",
+                            ["reason"] = $"At most {MaxUiIntentsPerTurn} navigation requests are allowed per turn."
+                        };
+                    }
+
+                    return await context.Function.InvokeAsync(context.Arguments, cancellationToken);
+                };
             })
             .Build();
     }
