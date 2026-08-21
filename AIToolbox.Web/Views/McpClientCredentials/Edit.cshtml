@@ -1,0 +1,23 @@
+@model McpClientCredentialFormViewModel
+
+@{
+    ViewData["Title"] = "Edit MCP Client Credential";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Edit MCP Client Credential</h1>
+        <p class="text-muted mb-0">Leave the client secret blank to keep the stored credential.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

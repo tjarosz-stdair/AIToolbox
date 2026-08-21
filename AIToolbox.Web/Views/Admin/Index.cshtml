@@ -58,6 +58,10 @@
             <strong>API Consumers</strong>
             <span>Service principals and generated API keys for external systems.</span>
         </a>
+        <a class="admin-tile" asp-controller="McpClientCredentials" asp-action="Index">
+            <strong>MCP Client Credentials</strong>
+            <span>Machine-client OAuth credentials this instance uses to call the P21 Toolbox MCP server, one per chat surface.</span>
+        </a>
         <a class="admin-tile" asp-controller="Storage" asp-action="Index">
             <strong>Storage</strong>
             <span>Project base path and tool-specific subpaths.</span>
@@ -69,6 +73,10 @@
         <a class="admin-tile" asp-controller="ApiDocumentation" asp-action="Index">
             <strong>API Documentation</strong>
             <span>Endpoint catalog with parameters and generated request examples.</span>
+        </a>
+        <a class="admin-tile" asp-controller="RetentionSettings" asp-action="Index">
+            <strong>Retention Settings</strong>
+            <span>How long full chat conversation transcripts are kept after they close.</span>
         </a>
     </div>
 </div>

@@ -1,0 +1,59 @@
+@model IReadOnlyList<McpClientCredential>
+
+@{
+    ViewData["Title"] = "MCP Client Credentials";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>MCP Client Credentials</h1>
+        <p class="text-muted mb-0">Machine-client OAuth credentials this instance uses to call the P21 Toolbox MCP server, one per chat surface.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="Create" class="btn btn-primary">Add credential</a>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Surface</th>
+                <th>Client ID</th>
+                <th>Granted scopes</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var credential in Model)
+        {
+            <tr>
+                <td>@credential.Surface</td>
+                <td>@credential.ClientId</td>
+                <td>@credential.GrantedScopes</td>
+                <td>
+                    @if (credential.IsEnabled)
+                    {
+                        <span class="badge text-bg-success">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Disabled</span>
+                    }
+                </td>
+                <td>@credential.UpdatedUtc.ToLocalTime().ToString("g")</td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@credential.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

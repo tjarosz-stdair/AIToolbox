@@ -1,0 +1,18 @@
+@model McpClientCredentialFormViewModel
+
+@{
+    ViewData["Title"] = "Add MCP Client Credential";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Add MCP Client Credential</h1>
+        <p class="text-muted mb-0">Generate the client in P21 Toolbox's Admin &gt; API Consumers page first, then paste the resulting client ID/secret here.</p>
+    </div>
+</div>
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

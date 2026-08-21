@@ -1,0 +1,70 @@
+@model McpClientCredentialFormViewModel
+
+<form method="post" class="tool-surface">
+    @Html.AntiForgeryToken()
+    <input asp-for="Id" type="hidden" />
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="form-grid">
+        <div class="mb-3">
+            <label asp-for="Surface" class="form-label"></label>
+            <input asp-for="Surface" class="form-control" placeholder="picsearch" />
+            <span asp-validation-for="Surface" class="text-danger"></span>
+            <div class="form-text">Matches the OAuth client's surface, e.g. <code>picsearch</code>.</div>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="ClientId" class="form-label"></label>
+            <input asp-for="ClientId" class="form-control" autocomplete="off" />
+            <span asp-validation-for="ClientId" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="ClientSecret" class="form-label"></label>
+            <input asp-for="ClientSecret" class="form-control" autocomplete="off" />
+            <span asp-validation-for="ClientSecret" class="text-danger"></span>
+            @if (Model.HasStoredClientSecret)
+            {
+                <div class="form-text">A secret is currently stored.</div>
+            }
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="TokenEndpointUrl" class="form-label"></label>
+            <input asp-for="TokenEndpointUrl" class="form-control" placeholder="https://api.p21toolbox.com/Token" />
+            <span asp-validation-for="TokenEndpointUrl" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="McpEndpointUrl" class="form-label"></label>
+            <input asp-for="McpEndpointUrl" class="form-control" placeholder="https://api.p21toolbox.com/api/mcp" />
+            <span asp-validation-for="McpEndpointUrl" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="GrantedScopes" class="form-label"></label>
+            <input asp-for="GrantedScopes" class="form-control" placeholder="carriertasks:read" />
+            <span asp-validation-for="GrantedScopes" class="text-danger"></span>
+            <div class="form-text">Space-delimited. Must match what was granted when this client was generated in P21 Toolbox's API Consumers admin page.</div>
+        </div>
+    </div>
+
+    <div class="switch-row">
+        <div class="form-check form-switch">
+            <input asp-for="IsEnabled" class="form-check-input" />
+            <label asp-for="IsEnabled" class="form-check-label"></label>
+        </div>
+        @if (Model.Id > 0)
+        {
+            <div class="form-check form-switch">
+                <input asp-for="ClearClientSecret" class="form-check-input" />
+                <label asp-for="ClearClientSecret" class="form-check-label"></label>
+            </div>
+        }
+    </div>
+
+    <div class="form-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+        <button type="submit" class="btn btn-primary">Save credential</button>
+    </div>
+</form>

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -27,6 +28,7 @@ builder.Services.Configure<AIToolsLoggingOptions>(builder.Configuration.GetSecti
 builder.Services.Configure<MicrosoftEntraOptions>(builder.Configuration.GetSection("MicrosoftEntra"));
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
 builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));
+builder.Services.Configure<SessionTokenValidationOptions>(builder.Configuration.GetSection("SessionTokenValidation"));
 
 var dataProtectionOptions = builder.Configuration.GetSection("DataProtection").Get<AIToolsDataProtectionOptions>()
     ?? new AIToolsDataProtectionOptions();
@@ -47,6 +49,12 @@ builder.Services.AddHttpClient("AiProviders", client =>
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
 
+builder.Services.AddHttpClient("McpClient", client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AIToolbox/1.0");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 builder.Services.AddScoped<SqlConnectionFactory>();
 builder.Services.AddScoped<DatabaseInitializer>();
 builder.Services.AddScoped<IAiProviderRepository, AiProviderRepository>();
@@ -55,6 +63,17 @@ builder.Services.AddScoped<IEventLogRepository, EventLogRepository>();
 builder.Services.AddScoped<IPromptRunRepository, PromptRunRepository>();
 builder.Services.AddScoped<IPlatformRepository, PlatformRepository>();
 builder.Services.AddScoped<IApiConsumerRepository, ApiConsumerRepository>();
+builder.Services.AddScoped<IMcpClientCredentialRepository, McpClientCredentialRepository>();
+builder.Services.AddSingleton<IMcpAccessTokenProvider, McpAccessTokenProvider>();
+builder.Services.AddSingleton<IJwksCache, JwksCache>();
+builder.Services.AddSingleton<ISessionTokenValidator, SessionTokenValidator>();
+builder.Services.AddScoped<IP21McpClientFactory, P21McpClientFactory>();
+builder.Services.AddScoped<IAiChatClientFactory, AiChatClientFactory>();
+builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
+builder.Services.AddScoped<IRetentionSettingsRepository, RetentionSettingsRepository>();
+builder.Services.AddScoped<IConversationUsageRollupRepository, ConversationUsageRollupRepository>();
+builder.Services.AddHostedService<ConversationRetentionPurgeService>();
+builder.Services.AddScoped<IPicSearchChatService, PicSearchChatService>();
 builder.Services.AddScoped<IAiBatchRepository, AiBatchRepository>();
 builder.Services.AddScoped<ISecretProtector, DataProtectionSecretProtector>();
 builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
@@ -214,6 +233,21 @@ builder.Services.AddCors(options =>
                 .AllowAnyMethod();
         }
     });
+
+    // Explicit allowlist only, never a wildcard (Part 4.2) — this tenant's own P21 Toolbox
+    // origin, e.g. "https://app.p21toolbox.com".
+    options.AddPolicy("PicSearchChat", policy =>
+    {
+        var origins = builder.Configuration
+            .GetSection("Cors:PicSearchOrigins")
+            .Get<string[]>() ?? [];
+        if (origins.Length > 0)
+        {
+            policy.WithOrigins(origins)
+                .WithHeaders("Content-Type", "X-P21-Session-Token")
+                .WithMethods("POST");
+        }
+    });
 });
 
 builder.Services.AddAuthorization(options =>
@@ -259,6 +293,14 @@ builder.Services.AddControllersWithViews(options =>
 });
 
 var app = builder.Build();
+
+var sessionTokenOptions = app.Services.GetRequiredService<IOptions<SessionTokenValidationOptions>>().Value;
+Log.Information(
+    "Session token validation configured: ExpectedIssuer={ExpectedIssuer}; ExpectedAudience={ExpectedAudience}; JwksUrl={JwksUrl}. " +
+    "A mismatched ExpectedAudience against this tenant's dbo.tenant.ai_toolbox_origin_url on the P21 Toolbox side causes every session token to silently degrade to anonymous tier.",
+    sessionTokenOptions.ExpectedIssuer,
+    sessionTokenOptions.ExpectedAudience,
+    sessionTokenOptions.JwksUrl);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

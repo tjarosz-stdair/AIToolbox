@@ -840,6 +840,101 @@ public sealed class DatabaseInitializer
                 ON dbo.ApiConsumerKeys(ApiConsumerId, CreatedUtc DESC);
         END;
 
+        IF OBJECT_ID('dbo.McpClientCredentials', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.McpClientCredentials
+            (
+                Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_McpClientCredentials PRIMARY KEY,
+                Surface NVARCHAR(80) NOT NULL,
+                ClientId NVARCHAR(200) NOT NULL,
+                ClientSecretCipherText NVARCHAR(MAX) NULL,
+                ClientSecretLastUpdatedUtc DATETIME2 NULL,
+                TokenEndpointUrl NVARCHAR(1000) NOT NULL,
+                McpEndpointUrl NVARCHAR(1000) NOT NULL,
+                GrantedScopes NVARCHAR(500) NULL,
+                IsEnabled BIT NOT NULL CONSTRAINT DF_McpClientCredentials_IsEnabled DEFAULT(1),
+                CreatedUtc DATETIME2 NOT NULL CONSTRAINT DF_McpClientCredentials_CreatedUtc DEFAULT(SYSUTCDATETIME()),
+                UpdatedUtc DATETIME2 NOT NULL CONSTRAINT DF_McpClientCredentials_UpdatedUtc DEFAULT(SYSUTCDATETIME())
+            );
+
+            CREATE UNIQUE INDEX UX_McpClientCredentials_Surface
+                ON dbo.McpClientCredentials(Surface);
+        END;
+
+        IF OBJECT_ID('dbo.Conversations', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.Conversations
+            (
+                Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Conversations PRIMARY KEY,
+                Sub NVARCHAR(200) NOT NULL,
+                Surface NVARCHAR(80) NOT NULL,
+                ContextKey NVARCHAR(200) NOT NULL,
+                Status NVARCHAR(40) NOT NULL CONSTRAINT DF_Conversations_Status DEFAULT('Active'),
+                UserTurnCount INT NOT NULL CONSTRAINT DF_Conversations_UserTurnCount DEFAULT(0),
+                TokensIn INT NOT NULL CONSTRAINT DF_Conversations_TokensIn DEFAULT(0),
+                TokensOut INT NOT NULL CONSTRAINT DF_Conversations_TokensOut DEFAULT(0),
+                CreatedUtc DATETIME2 NOT NULL CONSTRAINT DF_Conversations_CreatedUtc DEFAULT(SYSUTCDATETIME()),
+                LastActiveUtc DATETIME2 NOT NULL CONSTRAINT DF_Conversations_LastActiveUtc DEFAULT(SYSUTCDATETIME()),
+                ClosedUtc DATETIME2 NULL,
+                RolledUp BIT NOT NULL CONSTRAINT DF_Conversations_RolledUp DEFAULT(0)
+            );
+
+            CREATE INDEX IX_Conversations_Sub_Surface_ContextKey_Status
+                ON dbo.Conversations(Sub, Surface, ContextKey, Status);
+
+            CREATE INDEX IX_Conversations_Status_ClosedUtc
+                ON dbo.Conversations(Status, ClosedUtc);
+        END;
+
+        IF OBJECT_ID('dbo.ConversationMessages', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.ConversationMessages
+            (
+                Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_ConversationMessages PRIMARY KEY,
+                ConversationId INT NOT NULL,
+                Role NVARCHAR(40) NOT NULL,
+                Sequence INT NOT NULL,
+                ContentJson NVARCHAR(MAX) NOT NULL,
+                ModelId NVARCHAR(200) NULL,
+                AiProviderId INT NULL,
+                CreatedUtc DATETIME2 NOT NULL CONSTRAINT DF_ConversationMessages_CreatedUtc DEFAULT(SYSUTCDATETIME()),
+                CONSTRAINT FK_ConversationMessages_Conversations
+                    FOREIGN KEY (ConversationId) REFERENCES dbo.Conversations(Id)
+            );
+
+            CREATE INDEX IX_ConversationMessages_ConversationId_Sequence
+                ON dbo.ConversationMessages(ConversationId, Sequence);
+        END;
+
+        IF OBJECT_ID('dbo.RetentionSettings', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.RetentionSettings
+            (
+                ConversationRetentionDays INT NOT NULL CONSTRAINT DF_RetentionSettings_ConversationRetentionDays DEFAULT(14),
+                UpdatedUtc DATETIME2 NOT NULL CONSTRAINT DF_RetentionSettings_UpdatedUtc DEFAULT(SYSUTCDATETIME())
+            );
+
+            INSERT INTO dbo.RetentionSettings (ConversationRetentionDays) VALUES (14);
+        END;
+
+        IF OBJECT_ID('dbo.ConversationUsageRollup', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.ConversationUsageRollup
+            (
+                [Date] DATE NOT NULL,
+                Surface NVARCHAR(80) NOT NULL,
+                ConversationCount INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_ConversationCount DEFAULT(0),
+                TurnCount INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_TurnCount DEFAULT(0),
+                TokensIn INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_TokensIn DEFAULT(0),
+                TokensOut INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_TokensOut DEFAULT(0),
+                EstimatedCostUsd DECIMAL(10,4) NOT NULL CONSTRAINT DF_ConversationUsageRollup_EstimatedCostUsd DEFAULT(0),
+                DegradedTierCount INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_DegradedTierCount DEFAULT(0),
+                BudgetExhaustedCount INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_BudgetExhaustedCount DEFAULT(0),
+                FailureCount INT NOT NULL CONSTRAINT DF_ConversationUsageRollup_FailureCount DEFAULT(0),
+                CONSTRAINT PK_ConversationUsageRollup PRIMARY KEY ([Date], Surface)
+            );
+        END;
+
         IF OBJECT_ID('dbo.AiBatchJobs', 'U') IS NULL
         BEGIN
             CREATE TABLE dbo.AiBatchJobs
@@ -1046,6 +1141,19 @@ public sealed class DatabaseInitializer
                 ('AICompare', 'AI Compare',
                  'Compares responses across configured AI providers.',
                  1, 'OpenToAllAuthenticated', SYSUTCDATETIME(), SYSUTCDATETIME());
+        END;
+
+        IF NOT EXISTS (SELECT 1 FROM dbo.ToolDefinitions WHERE ToolKey = 'PicSearchChat')
+        BEGIN
+            INSERT INTO dbo.ToolDefinitions
+                (ToolKey, DisplayName, Description, IsEnabled, AccessMode, CreatedUtc, UpdatedUtc)
+            VALUES
+                ('PicSearchChat', 'PIC Search Chat',
+                 'Agentic chat assistant embedded in P21 Toolbox PIC Search, calling the P21 Toolbox MCP server. ' +
+                 'IsEnabled/ActiveProviderId here act as the admin kill switch and provider selection for this ' +
+                 'surface; AccessMode/ToolUserAllowList do not apply since end users are identified by the P21 ' +
+                 'session-token subject, not an AIToolbox-provisioned account.',
+                 0, 'OpenToAllAuthenticated', SYSUTCDATETIME(), SYSUTCDATETIME());
         END;
 
         IF NOT EXISTS (SELECT 1 FROM dbo.ToolDirectives WHERE ToolKey = 'ProductParser')
