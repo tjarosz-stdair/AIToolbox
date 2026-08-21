@@ -140,7 +140,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "openP21Panel" && sender.tab?.id) {
+    toggleP21Panel(sender.tab.id);
+    return false;
+  }
+
   return false;
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url === undefined && changeInfo.status === undefined) {
+    return;
+  }
+
+  void chrome.tabs.get(tabId).then(tab => updateP21PanelOptions(tabId, tab.url));
+});
+
+chrome.sidePanel.onOpened.addListener(info => {
+  console.log("[AI Toolbox] sidePanel.onOpened", info);
+  if (info.tabId !== undefined) {
+    openPanelTabIds.add(info.tabId);
+    void persistOpenPanelTabIds();
+  }
+});
+
+chrome.sidePanel.onClosed.addListener(info => {
+  console.log("[AI Toolbox] sidePanel.onClosed", info);
+  if (info.tabId !== undefined) {
+    openPanelTabIds.delete(info.tabId);
+    void persistOpenPanelTabIds();
+  }
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  void chrome.sidePanel.setOptions({ enabled: false });
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -425,5 +458,60 @@ function isZohoCrmUrl(url: string | undefined): boolean {
     return parsed.hostname === "crm.zoho.com" && parsed.pathname.startsWith("/crm/");
   } catch {
     return false;
+  }
+}
+
+function isP21Url(url: string | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "p21web.stdair.com" && parsed.pathname.startsWith("/prophet21");
+  } catch {
+    return false;
+  }
+}
+
+const openPanelTabIdsKey = "openPanelTabIds";
+// In-memory mirror of chrome.storage.session so the open/closed decision below can be made
+// synchronously: chrome.sidePanel.open() only succeeds when called directly within the user
+// gesture's call stack, and awaiting a storage read first breaks that requirement.
+let openPanelTabIds = new Set<number>();
+
+void chrome.storage.session.get(openPanelTabIdsKey).then(stored => {
+  openPanelTabIds = new Set((stored[openPanelTabIdsKey] as number[] | undefined) || []);
+  console.log("[AI Toolbox] Hydrated open side panel tab ids", Array.from(openPanelTabIds));
+});
+
+function toggleP21Panel(tabId: number): void {
+  const isOpen = openPanelTabIds.has(tabId);
+  console.log("[AI Toolbox] openP21Panel message received", { tabId, isOpen });
+
+  if (isOpen) {
+    chrome.sidePanel.close({ tabId })
+      .then(() => console.log("[AI Toolbox] Side panel closed for tab", tabId))
+      .catch(error => console.error("[AI Toolbox] Failed to close side panel", error));
+  } else {
+    chrome.sidePanel.open({ tabId })
+      .then(() => console.log("[AI Toolbox] Side panel opened for tab", tabId))
+      .catch(error => console.error("[AI Toolbox] Failed to open side panel", error));
+  }
+}
+
+async function persistOpenPanelTabIds(): Promise<void> {
+  await chrome.storage.session.set({ [openPanelTabIdsKey]: Array.from(openPanelTabIds) });
+}
+
+async function updateP21PanelOptions(tabId: number, url: string | undefined): Promise<void> {
+  try {
+    if (isP21Url(url)) {
+      await chrome.sidePanel.setOptions({ tabId, path: "sidepanel.html", enabled: true });
+    } else {
+      await chrome.sidePanel.setOptions({ tabId, enabled: false });
+    }
+  } catch {
+    // The tab may have closed before the options update landed; nothing to do.
   }
 }
