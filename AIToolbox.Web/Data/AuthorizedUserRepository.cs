@@ -62,6 +62,30 @@ public sealed class AuthorizedUserRepository : IAuthorizedUserRepository
         return await reader.ReadAsync(cancellationToken) ? MapUser(reader) : null;
     }
 
+    public async Task<AuthorizedUser> ProvisionAsync(string email, string? tenantId, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = NormalizeEmail(email);
+
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.CommandText = """
+            IF NOT EXISTS (SELECT 1 FROM dbo.AuthorizedUsers WHERE EmailNormalized = @EmailNormalized)
+            BEGIN
+                INSERT INTO dbo.AuthorizedUsers
+                    (Email, EmailNormalized, DisplayName, TenantId, IsAdmin, IsEnabled, CreatedUtc, UpdatedUtc)
+                VALUES
+                    (@Email, @EmailNormalized, NULL, @TenantId, 0, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
+            END
+            """;
+        insertCommand.Parameters.AddWithValue("@Email", email.Trim());
+        insertCommand.Parameters.AddWithValue("@EmailNormalized", normalizedEmail);
+        insertCommand.Parameters.AddWithValue("@TenantId", (object?)tenantId?.Trim() ?? DBNull.Value);
+        await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        return await GetByEmailAsync(email, cancellationToken)
+            ?? throw new InvalidOperationException($"Failed to provision access for '{email}'.");
+    }
+
     public async Task<int> CreateAsync(AuthorizedUser user, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);

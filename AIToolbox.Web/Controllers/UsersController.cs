@@ -35,7 +35,7 @@ public sealed class UsersController : Controller
     {
         var options = _entraOptions.Value;
         var users = await _users.GetAllAsync(cancellationToken);
-        var redirectUri = BuildRedirectUri(options.CallbackPath);
+        var redirectUri = BuildRedirectUri("/Account/AdminConsentComplete");
         var tenants = options.AllowedTenantIds
             .Where(tenantId => !string.IsNullOrWhiteSpace(tenantId))
             .Select(tenantId => tenantId.Trim())
@@ -153,7 +153,7 @@ public sealed class UsersController : Controller
     private string BuildRedirectUri(string callbackPath)
     {
         var pathBase = Request.PathBase.ToString().TrimEnd('/');
-        var callback = string.IsNullOrWhiteSpace(callbackPath) ? "/signin-oidc" : callbackPath.Trim();
+        var callback = callbackPath.Trim();
         if (!callback.StartsWith('/'))
         {
             callback = "/" + callback;

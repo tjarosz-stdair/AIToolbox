@@ -744,6 +744,14 @@ body {
   gap: 10px;
 }
 
+.admin-section {
+  margin-bottom: 28px;
+}
+
+.admin-section:last-child {
+  margin-bottom: 0;
+}
+
 .admin-grid {
   display: grid;
   gap: 14px;

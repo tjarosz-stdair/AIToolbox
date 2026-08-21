@@ -1,0 +1,18 @@
+@{
+    var succeeded = ViewData["Succeeded"] as bool? == true;
+    var tenantId = ViewData["TenantId"] as string;
+    ViewData["Title"] = succeeded ? "Tenant consent complete" : "Tenant consent failed";
+}
+
+<div class="tool-surface narrow">
+    <h1>@ViewData["Title"]</h1>
+    <p class="text-muted">@ViewData["Message"]</p>
+    @if (!string.IsNullOrWhiteSpace(tenantId))
+    {
+        <dl class="metadata-grid mb-3">
+            <dt>Tenant ID</dt>
+            <dd class="event-log-long">@tenantId</dd>
+        </dl>
+    }
+    <a asp-controller="Account" asp-action="SignIn" class="btn btn-primary">Sign in</a>
+</div>

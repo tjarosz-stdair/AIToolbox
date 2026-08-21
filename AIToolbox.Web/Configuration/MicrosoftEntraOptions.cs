@@ -20,5 +20,7 @@ public sealed class MicrosoftEntraOptions
 
     public List<string> AllowedDomains { get; set; } = [];
 
+    public bool EnableAutoProvisioning { get; set; } = true;
+
     public List<string> BootstrapAdminEmails { get; set; } = [];
 }

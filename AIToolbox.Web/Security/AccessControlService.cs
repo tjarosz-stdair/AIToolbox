@@ -59,7 +59,12 @@ public sealed class AccessControlService : IAccessControlService
 
         if (user is null && !bootstrapAdmin)
         {
-            return UserAccessResult.Denied("The user has not been granted access.", email, tenantId);
+            if (!_options.Value.EnableAutoProvisioning)
+            {
+                return UserAccessResult.Denied("The user has not been granted access.", email, tenantId);
+            }
+
+            user = await _users.ProvisionAsync(email, tenantId, cancellationToken);
         }
 
         if (user is not null && !user.IsEnabled)

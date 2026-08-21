@@ -53,4 +53,32 @@ public sealed class AccountController : Controller
 
         return View();
     }
+
+    [AllowAnonymous]
+    public IActionResult AdminConsentComplete(bool? admin_consent = null, string? tenant = null, string? error = null, string? error_description = null)
+    {
+        var succeeded = admin_consent == true && string.IsNullOrWhiteSpace(error);
+        ViewData["Succeeded"] = succeeded;
+        ViewData["TenantId"] = tenant;
+        ViewData["Message"] = succeeded
+            ? "Tenant admin consent was granted. Users from this tenant can now sign in if they have an enabled access grant."
+            : BuildAdminConsentErrorMessage(error, error_description);
+
+        return View();
+    }
+
+    private static string BuildAdminConsentErrorMessage(string? error, string? errorDescription)
+    {
+        if (!string.IsNullOrWhiteSpace(errorDescription))
+        {
+            return errorDescription;
+        }
+
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            return $"Tenant admin consent did not complete: {error}.";
+        }
+
+        return "Tenant admin consent did not return a completion status.";
+    }
 }

@@ -152,6 +152,12 @@ builder.Services.AddAuthentication(options =>
             OnRemoteFailure = context =>
             {
                 context.HandleResponse();
+                if (IsAdminConsentCallback(context.Request, context.Failure))
+                {
+                    context.Response.Redirect(BuildAdminConsentCompleteUrl(context.Request));
+                    return Task.CompletedTask;
+                }
+
                 var message = Uri.EscapeDataString(context.Failure?.Message ?? "Microsoft sign-in failed.");
                 context.Response.Redirect($"{context.Request.PathBase}/Account/ExternalAuthFailed?message={message}");
                 return Task.CompletedTask;
@@ -399,4 +405,36 @@ static async Task InitializeDatabaseAsync(WebApplication app)
             throw;
         }
     }
+}
+
+static bool IsAdminConsentCallback(HttpRequest request, Exception? failure)
+{
+    if (request.Query.ContainsKey("admin_consent"))
+    {
+        return true;
+    }
+
+    return request.Query.ContainsKey("tenant")
+        && failure?.Message.Contains("State is null or empty", StringComparison.OrdinalIgnoreCase) == true;
+}
+
+static string BuildAdminConsentCompleteUrl(HttpRequest request)
+{
+    var redirect = $"{request.PathBase}/Account/AdminConsentComplete";
+    var separator = "?";
+    foreach (var key in new[] { "admin_consent", "tenant", "error", "error_description" })
+    {
+        if (!request.Query.TryGetValue(key, out var values) || values.Count == 0)
+        {
+            continue;
+        }
+
+        redirect += separator
+            + Uri.EscapeDataString(key)
+            + "="
+            + Uri.EscapeDataString(values.ToString());
+        separator = "&";
+    }
+
+    return redirect;
 }

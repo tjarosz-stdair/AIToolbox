@@ -12,6 +12,8 @@ public interface IAuthorizedUserRepository
 
     Task<int> CreateAsync(AuthorizedUser user, CancellationToken cancellationToken = default);
 
+    Task<AuthorizedUser> ProvisionAsync(string email, string? tenantId, CancellationToken cancellationToken = default);
+
     Task UpdateAsync(AuthorizedUser user, CancellationToken cancellationToken = default);
 
     Task MarkLastLoginAsync(string email, CancellationToken cancellationToken = default);

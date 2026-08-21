@@ -9,45 +9,66 @@
     </div>
 </div>
 
-<div class="admin-grid">
-    <a class="admin-tile" asp-controller="Providers" asp-action="Index">
-        <strong>Providers</strong>
-        <span>AI provider endpoints, models, and credentials.</span>
-    </a>
-    <a class="admin-tile" asp-controller="ApiConsumers" asp-action="Index">
-        <strong>API Consumers</strong>
-        <span>Service principals and generated API keys for external systems.</span>
-    </a>
-    <a class="admin-tile" asp-controller="AdminBatches" asp-action="Index">
-        <strong>Batch Jobs</strong>
-        <span>Service-submitted AI batch job status, results, and cancellation.</span>
-    </a>
-    <a class="admin-tile" asp-controller="ApiDocumentation" asp-action="Index">
-        <strong>API Documentation</strong>
-        <span>Endpoint catalog with parameters and generated request examples.</span>
-    </a>
-    <a class="admin-tile" asp-controller="Users" asp-action="Index">
-        <strong>Users</strong>
-        <span>App-wide access grants and admin role assignments.</span>
-    </a>
-    <a class="admin-tile" asp-controller="EventLogs" asp-action="Index">
-        <strong>Event Logs</strong>
-        <span>Authentication activity and future application event history.</span>
-    </a>
-    <a class="admin-tile" asp-controller="Tools" asp-action="Index">
-        <strong>Tools</strong>
-        <span>Tool definitions, provider assignment, and per-tool access.</span>
-    </a>
-    <a class="admin-tile" asp-controller="Directives" asp-action="Index">
-        <strong>Directives</strong>
-        <span>Tool-specific extraction prompts and target schemas.</span>
-    </a>
-    <a class="admin-tile" asp-controller="Usage" asp-action="Index">
-        <strong>Usage</strong>
-        <span>Activity, token counts, and estimated costs.</span>
-    </a>
-    <a class="admin-tile" asp-controller="Storage" asp-action="Index">
-        <strong>Storage</strong>
-        <span>Project base path and tool-specific subpaths.</span>
-    </a>
+<div class="admin-section">
+    <div class="section-heading">
+        <h2>AI Setup</h2>
+    </div>
+    <div class="admin-grid">
+        <a class="admin-tile" asp-controller="Providers" asp-action="Index">
+            <strong>Providers</strong>
+            <span>AI provider endpoints, models, and credentials.</span>
+        </a>
+        <a class="admin-tile" asp-controller="Directives" asp-action="Index">
+            <strong>Directives</strong>
+            <span>Tool-specific extraction prompts and target schemas.</span>
+        </a>
+        <a class="admin-tile" asp-controller="AdminBatches" asp-action="Index">
+            <strong>Batch Jobs</strong>
+            <span>Service-submitted AI batch job status, results, and cancellation.</span>
+        </a>
+        <a class="admin-tile" asp-controller="Usage" asp-action="Index">
+            <strong>Usage</strong>
+            <span>Activity, token counts, and estimated costs.</span>
+        </a>
+    </div>
+</div>
+
+<div class="admin-section">
+    <div class="section-heading">
+        <h2>Tools</h2>
+    </div>
+    <div class="admin-grid">
+        <a class="admin-tile" asp-controller="Tools" asp-action="Index">
+            <strong>Tools</strong>
+            <span>Tool definitions, provider assignment, and per-tool access.</span>
+        </a>
+    </div>
+</div>
+
+<div class="admin-section">
+    <div class="section-heading">
+        <h2>System Config</h2>
+    </div>
+    <div class="admin-grid">
+        <a class="admin-tile" asp-controller="Users" asp-action="Index">
+            <strong>Users</strong>
+            <span>App-wide access grants and admin role assignments.</span>
+        </a>
+        <a class="admin-tile" asp-controller="ApiConsumers" asp-action="Index">
+            <strong>API Consumers</strong>
+            <span>Service principals and generated API keys for external systems.</span>
+        </a>
+        <a class="admin-tile" asp-controller="Storage" asp-action="Index">
+            <strong>Storage</strong>
+            <span>Project base path and tool-specific subpaths.</span>
+        </a>
+        <a class="admin-tile" asp-controller="EventLogs" asp-action="Index">
+            <strong>Event Logs</strong>
+            <span>Authentication activity and future application event history.</span>
+        </a>
+        <a class="admin-tile" asp-controller="ApiDocumentation" asp-action="Index">
+            <strong>API Documentation</strong>
+            <span>Endpoint catalog with parameters and generated request examples.</span>
+        </a>
+    </div>
 </div>
