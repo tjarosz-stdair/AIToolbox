@@ -1,0 +1,73 @@
+@{
+    ViewData["Title"] = "Embed Test Harness";
+    var ownOrigin = (string)ViewData["OwnOrigin"]!;
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Embed Test Harness</h1>
+        <p class="text-muted mb-0">
+            Manually drives the /embed/chat postMessage protocol — a stand-in broker until PIC Search's own UI trigger
+            or the Chrome extension broker exist. Admin/diagnostic tool only.
+        </p>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    This page's own origin (<code>@ownOrigin</code>) must be listed in <code>Embed:ParentOrigins</code> for the iframe
+    below to load at all. If you see a blank frame or a "not available" page, that's the framing policy correctly
+    refusing an unlisted origin — add this origin to config and restart.
+</div>
+
+<div
+    data-embed-harness
+    data-own-origin="@ownOrigin"
+    class="harness-root">
+
+    <div class="harness-controls">
+        <div class="mb-3">
+            <label class="form-label">Session token (leave blank to test the unauthenticated path)</label>
+            <textarea class="form-control" data-field="sessionToken" rows="3" placeholder="Paste a real P21 Toolbox session token here, obtained separately"></textarea>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Context key</label>
+            <input type="text" class="form-control" data-field="contextKey" value="order:12345" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Surfaces (comma-separated)</label>
+            <input type="text" class="form-control" data-field="surfaces" value="picsearch" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Page context title</label>
+            <input type="text" class="form-control" data-field="pageContextTitle" value="Order 12345" />
+        </div>
+
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" data-action="send-init">Send init</button>
+            <button type="button" class="btn btn-outline-primary" data-action="send-context">Send context</button>
+            <button type="button" class="btn btn-outline-primary" data-action="send-token">Send token</button>
+            <button type="button" class="btn btn-outline-secondary" data-action="toggle-visibility">Toggle visibility</button>
+        </div>
+
+        <div class="harness-log-heading mt-3">Messages received from the panel:</div>
+        <pre class="harness-log" data-log></pre>
+    </div>
+
+    <iframe
+        data-harness-iframe
+        src="/embed/chat?parentOrigin=@Uri.EscapeDataString(ownOrigin)"
+        class="harness-iframe"
+        title="Embed chat panel"></iframe>
+</div>
+
+<script src="~/js/embed-test-harness.js" asp-append-version="true"></script>
+
+<style>
+    .harness-root { display: flex; gap: 1rem; align-items: flex-start; }
+    .harness-controls { flex: 1 1 auto; min-width: 320px; max-width: 480px; }
+    .harness-iframe { flex: 0 0 380px; height: 640px; border: 1px solid #dee2e6; }
+    .harness-log { height: 200px; overflow-y: auto; background: #f8f9fa; border: 1px solid #dee2e6; padding: 0.5rem; font-size: 0.8rem; }
+</style>
