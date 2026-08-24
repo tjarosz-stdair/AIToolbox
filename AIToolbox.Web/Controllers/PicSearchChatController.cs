@@ -89,6 +89,18 @@ public sealed class PicSearchChatController : Controller
                 await WriteEventAsync(new { type = "conversationReset", message = result.ResetMessage }, cancellationToken);
             }
 
+            foreach (var intent in result.Intents)
+            {
+                await WriteEventAsync(new
+                {
+                    type = "intent",
+                    name = intent.Name,
+                    kind = intent.Kind,
+                    surface = intent.Surface,
+                    arguments = intent.Arguments
+                }, cancellationToken);
+            }
+
             await WriteEventAsync(new
             {
                 type = "complete",

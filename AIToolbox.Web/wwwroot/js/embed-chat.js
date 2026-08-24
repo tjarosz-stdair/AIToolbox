@@ -364,6 +364,17 @@
                     case 'conversationReset':
                         renderSystemNotice(message.message);
                         break;
+                    case 'intent':
+                        // The local closure function, not window.AIToolboxEmbed.sendIntent — that
+                        // indirection exists for external/console use, not for code already
+                        // inside this same closure.
+                        sendIntent({
+                            name: message.name,
+                            kind: message.kind,
+                            surface: message.surface,
+                            arguments: message.arguments
+                        });
+                        break;
                     case 'complete':
                         hideThinking();
                         renderAssistantMessage(message.message, message.toolsUsed);

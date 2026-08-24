@@ -13,11 +13,10 @@ namespace AIToolbox.Web.Services;
 ///
 /// Fire-and-forget by design (§5.6): this calls nothing else and never blocks. There is no
 /// broker/parent-frame connection on the server to post an intent to — this only returns
-/// {"status":"queued"} so the model can react, per §5.5. Wiring an actual client-side
-/// aitoolbox:intent post (via the embed panel's already-built, but as-yet-uncalled,
-/// window.AIToolboxEmbed.sendIntent) needs a corresponding NDJSON event added to
-/// /api/picsearch/ask once P21 Toolbox has real capabilities to test against — not built yet,
-/// since nothing exists on either side to exercise it end-to-end today.
+/// {"status":"queued"} so the model can react, per §5.5. The actual client-side
+/// aitoolbox:intent post happens via PicSearchChatService extracting queued ui_ calls from the
+/// completed turn and PicSearchChatController emitting them as "intent" NDJSON events, which
+/// embed-chat.js's stream handler feeds into the panel's own sendIntent.
 /// </summary>
 public sealed class UiIntentFunction : AIFunction
 {
@@ -33,6 +32,12 @@ public sealed class UiIntentFunction : AIFunction
     public override string Description => _capability.Description;
 
     public override JsonElement JsonSchema => _capability.InputSchema;
+
+    /// <summary>The UI-navigable document (orderentry/picsearch) that published this capability —
+    /// needed to report which surface a given ui_ call came from once it's actually invoked.</summary>
+    public string UiSurface => _capability.UiSurface;
+
+    public string Kind => _capability.Kind;
 
     protected override ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
     {

@@ -150,11 +150,15 @@ public sealed class PicSearchChatService : IPicSearchChatService
 
         McpClient? mcpClient = null;
         ChatResponse response;
+        var uiToolsByName = new Dictionary<string, UiIntentFunction>(StringComparer.Ordinal);
         try
         {
             mcpClient = await _mcpClientFactory.ConnectAsync(Surface, request.SessionToken, cancellationToken);
             var mcpTools = await _mcpClientFactory.GetToolsAsync(mcpClient, conversation.Id.ToString(), cancellationToken);
             var uiTools = await _uiCapabilities.GetToolsAsync(Surface, request.UiSurfaces, cancellationToken);
+            uiToolsByName = uiTools
+                .OfType<UiIntentFunction>()
+                .ToDictionary(tool => tool.Name, StringComparer.Ordinal);
 
             var tools = new List<AITool>(mcpTools.Cast<AITool>());
             tools.AddRange(uiTools);
@@ -218,16 +222,71 @@ public sealed class PicSearchChatService : IPicSearchChatService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var intents = ExtractQueuedUiIntents(response.Messages, uiToolsByName);
+
         return new PicSearchTurnResult(
             conversation.Id,
             resetMessage is not null,
             resetMessage,
             response.Text,
             toolsUsed,
+            intents,
             SessionTokenPresent: true,
             SessionTokenValid: true,
             Code: null,
             ErrorMessage: null);
+    }
+
+    /// <summary>
+    /// A ui_ call the 2-per-turn cap rejected (AiChatClientFactory's FunctionInvoker hook) comes
+    /// back with a {"status":"rejected",...} result, not UiIntentFunction's own
+    /// {"status":"queued"} — only the latter should ever reach the browser as a real intent.
+    /// Public and static (not private) specifically so this can be unit tested without the rest
+    /// of PicSearchChatService's DI graph — this path has never run against anything real, since
+    /// nothing consumed it before now.
+    /// </summary>
+    public static IReadOnlyList<UiIntentDescriptor> ExtractQueuedUiIntents(
+        IList<ChatMessage> messages,
+        IReadOnlyDictionary<string, UiIntentFunction> uiToolsByName)
+    {
+        if (uiToolsByName.Count == 0)
+        {
+            return [];
+        }
+
+        var uiCallsById = messages
+            .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
+            .Where(call => uiToolsByName.ContainsKey(call.Name))
+            .ToDictionary(call => call.CallId, call => call);
+
+        if (uiCallsById.Count == 0)
+        {
+            return [];
+        }
+
+        var results = new List<UiIntentDescriptor>();
+        foreach (var message in messages)
+        {
+            foreach (var result in message.Contents.OfType<FunctionResultContent>())
+            {
+                if (!uiCallsById.TryGetValue(result.CallId, out var call))
+                {
+                    continue;
+                }
+
+                if (result.Result is not IDictionary<string, object?> statusResult
+                    || !statusResult.TryGetValue("status", out var status)
+                    || status as string != "queued")
+                {
+                    continue;
+                }
+
+                var tool = uiToolsByName[call.Name];
+                results.Add(new UiIntentDescriptor(call.Name, tool.Kind, tool.UiSurface, call.Arguments ?? new Dictionary<string, object?>()));
+            }
+        }
+
+        return results;
     }
 
     private async Task<Conversation> CreateConversationAsync(string sub, string contextKey, DateOnly today, CancellationToken cancellationToken)
@@ -353,6 +412,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
             resetMessage is not null,
             resetMessage,
             string.Empty,
+            [],
             [],
             sessionTokenPresent,
             sessionTokenValid,

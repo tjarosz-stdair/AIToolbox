@@ -23,12 +23,18 @@ public static class PicSearchErrorCode
     public const string BadRequest = "bad_request";
 }
 
+/// <summary>One ui_ tool call the model actually made this turn and that queued successfully
+/// (not one the 2-per-turn cap rejected). Arguments values are JsonElement clones, same as
+/// FunctionCallContent.Arguments — directly serializable into the "intent" NDJSON event.</summary>
+public sealed record UiIntentDescriptor(string Name, string Kind, string Surface, IDictionary<string, object?> Arguments);
+
 public sealed record PicSearchTurnResult(
     int ConversationId,
     bool ConversationWasReset,
     string? ResetMessage,
     string AssistantText,
     IReadOnlyList<string> ToolsUsed,
+    IReadOnlyList<UiIntentDescriptor> Intents,
     bool SessionTokenPresent,
     bool SessionTokenValid,
     string? Code,
