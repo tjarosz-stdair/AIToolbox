@@ -66,6 +66,19 @@ public sealed class EmbedOriginResolverTests
     }
 
     [Fact]
+    public void ChromeExtensionOrigin_MatchesWhenConfigured()
+    {
+        // The Chrome-extension-broker case (side panel hosting /embed/chat): Uri.TryCreate must
+        // still populate Host/Port for this non-http(s) scheme via .NET's generic URI syntax
+        // fallback for Normalize() to work at all here -- unverified until now.
+        var resolver = CreateResolver(["chrome-extension://lemdkjldlbphmfjbgbeolbpkmkeclenc"]);
+
+        var result = resolver.Resolve("chrome-extension://lemdkjldlbphmfjbgbeolbpkmkeclenc");
+
+        Assert.Equal("chrome-extension://lemdkjldlbphmfjbgbeolbpkmkeclenc", result);
+    }
+
+    [Fact]
     public void EmptyAllowlist_NeverMatchesEvenAPlausibleOrigin()
     {
         var resolver = CreateResolver([]);

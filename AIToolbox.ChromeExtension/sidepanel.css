@@ -37,8 +37,11 @@ h1 {
 }
 
 main {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 14px;
+  min-height: 0;
   padding: 16px;
 }
 
@@ -67,4 +70,13 @@ main {
   color: var(--panel-muted);
   line-height: 1.5;
   margin: 0;
+}
+
+.chat-frame {
+  background: #ffffff;
+  border: 0;
+  border-radius: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }

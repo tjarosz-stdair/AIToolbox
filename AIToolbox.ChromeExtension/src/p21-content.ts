@@ -38,8 +38,20 @@ function injectMenuIcon(): void {
   }
 }
 
-function handleMenuIconClick(): void {
+async function handleMenuIconClick(): Promise<void> {
   console.log("[AI Toolbox] Menu icon clicked, sending openP21Panel message");
-  chrome.runtime.sendMessage({ type: "openP21Panel" })
-    .catch(error => console.error("[AI Toolbox] Failed to send openP21Panel message", error));
+  try {
+    await chrome.runtime.sendMessage({ type: "openP21Panel" });
+  } catch (error) {
+    // chrome.runtime.sendMessage throws SYNCHRONOUSLY (not a rejected promise) once the
+    // extension context is invalidated -- e.g. the extension was reloaded/updated while this
+    // tab sat open. No API call can revive an already-injected content script's dead
+    // chrome.runtime handle; only a page reload re-injects it against the current extension
+    // instance. The tooltip is the only recovery path available from here.
+    console.error("[AI Toolbox] Failed to send openP21Panel message", error);
+    const item = document.getElementById(menuItemId);
+    if (item) {
+      item.title = "AI Toolbox needs the page refreshed to work again";
+    }
+  }
 }

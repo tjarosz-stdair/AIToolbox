@@ -19,6 +19,30 @@ type AuthTokenCache = AuthTokenResult & {
   refreshToken?: string;
 };
 
+// ---- PIC Search surface bridge (side panel <-> pic-search-content.ts) ----
+//
+// Keyed by "tabId:frameId" because PIC Search, when opened from Order Entry, registers from a
+// SUB-frame of the P21Web tab (#vbrIFrame), not the tab's main frame -- tabId alone would collide
+// if a future surface ever registered from that tab's main frame too.
+interface PicsearchSurfaceState {
+  surface: string;
+  contextKey: string | null;
+  pageContext: unknown;
+  registeredAtMs: number;
+}
+
+const picsearchSurfaces = new Map<string, PicsearchSurfaceState>();
+
+function surfaceKey(tabId: number, frameId: number): string {
+  return `${tabId}:${frameId}`;
+}
+
+function broadcastPicsearchEvent(payload: Record<string, unknown>): void {
+  chrome.runtime.sendMessage(payload).catch(() => {
+    // Expected whenever no side panel is currently listening -- not an error.
+  });
+}
+
 async function getAccessToken(): Promise<AuthTokenResult> {
   const settings = await getSettings();
   if (!settings.clientId || !settings.scope) {
@@ -145,7 +169,83 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message?.type === "picsearchSurfaceEvent" && sender.tab?.id !== undefined && sender.frameId !== undefined) {
+    handlePicsearchSurfaceEvent(sender.tab.id, sender.frameId, message.event);
+    return false;
+  }
+
+  if (message?.type === "getPicsearchSurface" && typeof message.tabId === "number") {
+    sendResponse(findPicsearchSurfaceForTab(message.tabId));
+    return false;
+  }
+
+  if (message?.type === "mintSessionToken" && typeof message.tabId === "number" && typeof message.frameId === "number") {
+    chrome.tabs.sendMessage(message.tabId, { type: "mintSessionToken" }, { frameId: message.frameId })
+      .then(sendResponse)
+      .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
+  if (message?.type === "sendPicsearchIntent" && typeof message.tabId === "number" && typeof message.frameId === "number") {
+    chrome.tabs.sendMessage(message.tabId, { type: "picsearchIntent", payload: message.payload }, { frameId: message.frameId })
+      .catch(error => console.error("[AI Toolbox] Failed to relay intent to PIC Search", error));
+    return false;
+  }
+
   return false;
+});
+
+function handlePicsearchSurfaceEvent(tabId: number, frameId: number, event: Record<string, unknown> | undefined): void {
+  if (!event || typeof event.type !== "string") {
+    return;
+  }
+
+  const key = surfaceKey(tabId, frameId);
+
+  if (event.type === "aitoolbox:surface-register" || event.type === "aitoolbox:context") {
+    const existing = picsearchSurfaces.get(key);
+    const state: PicsearchSurfaceState = {
+      surface: typeof event.surface === "string" ? event.surface : (existing?.surface ?? "picsearch"),
+      contextKey: typeof event.contextKey === "string" ? event.contextKey : (existing?.contextKey ?? null),
+      pageContext: event.pageContext ?? existing?.pageContext ?? null,
+      registeredAtMs: existing?.registeredAtMs ?? Date.now()
+    };
+    picsearchSurfaces.set(key, state);
+    broadcastPicsearchEvent({ type: "picsearchContextUpdate", tabId, frameId, ...state });
+    return;
+  }
+
+  if (event.type === "aitoolbox:ack") {
+    broadcastPicsearchEvent({ type: "picsearchAck", tabId, frameId, acks: event.acks });
+    return;
+  }
+
+  if (event.type === "aitoolbox:surface-unregister") {
+    picsearchSurfaces.delete(key);
+    broadcastPicsearchEvent({ type: "picsearchSurfaceGone", tabId, frameId });
+  }
+}
+
+function findPicsearchSurfaceForTab(tabId: number): (PicsearchSurfaceState & { tabId: number; frameId: number }) | null {
+  for (const [key, state] of picsearchSurfaces) {
+    const [keyTabId, keyFrameId] = key.split(":").map(Number);
+    if (keyTabId === tabId) {
+      return { ...state, tabId, frameId: keyFrameId };
+    }
+  }
+  return null;
+}
+
+function clearPicsearchSurfacesForTab(tabId: number): void {
+  for (const key of Array.from(picsearchSurfaces.keys())) {
+    if (key.startsWith(`${tabId}:`)) {
+      picsearchSurfaces.delete(key);
+    }
+  }
+}
+
+chrome.tabs.onRemoved.addListener(tabId => {
+  clearPicsearchSurfacesForTab(tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
