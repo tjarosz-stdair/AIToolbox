@@ -36,6 +36,8 @@
         var statusBanner = root.querySelector('[data-status-banner]');
         var contextChip = root.querySelector('[data-context-chip]');
         var surfacePills = root.querySelector('[data-surface-pills]');
+        var autoNavigateRow = root.querySelector('[data-auto-navigate-row]');
+        var autoNavigateCheckbox = root.querySelector('[data-auto-navigate-checkbox]');
 
         // ---- state ----
         var bridgeState = 'awaiting-init'; // awaiting-init | linked | unauthenticated | awaiting-token
@@ -124,6 +126,7 @@
             currentSurfaces = Array.isArray(data.surfaces) ? data.surfaces : [];
             renderContextChip();
             renderSurfacePills();
+            updateAutoNavigateVisibility();
 
             if (data.sessionToken) {
                 linkWithToken(data.sessionToken);
@@ -140,6 +143,7 @@
             currentSurfaces = Array.isArray(data.surfaces) ? data.surfaces : currentSurfaces;
             renderSurfacePills();
             renderContextChip();
+            updateAutoNavigateVisibility();
 
             if (newContextKey !== contextKey) {
                 // A message held while awaiting a fresh token (bridgeState === 'awaiting-token')
@@ -377,7 +381,7 @@
                         break;
                     case 'complete':
                         hideThinking();
-                        renderAssistantMessage(message.message, message.toolsUsed);
+                        renderAssistantMessage(message.messageHtml, message.message, message.toolsUsed);
                         finishTurn();
                         break;
                     case 'error':
@@ -410,7 +414,8 @@
                     contextKey: contextKey,
                     message: text,
                     uiSurfaces: currentSurfaces,
-                    pageContext: currentPageContext
+                    pageContext: currentPageContext,
+                    autoNavigate: !autoNavigateRow.hidden && autoNavigateCheckbox.checked
                 }),
                 signal: controller ? controller.signal : undefined
             }).then(function (response) {
@@ -563,8 +568,12 @@
             appendBubble('embed-message-user', textToHtml(text));
         }
 
-        function renderAssistantMessage(text, toolsUsed) {
-            var html = textToHtml(text || '');
+        function renderAssistantMessage(messageHtml, plainText, toolsUsed) {
+            // messageHtml is rendered server-side by IMarkdownRenderer (Markdig with HTML
+            // disabled and a link-scheme allowlist) — the same pipeline already used for AI
+            // Compare's responses. Fall back to escaped plain text only if it's ever missing
+            // (e.g. an older cached response shape), never render plainText as HTML directly.
+            var html = messageHtml || textToHtml(plainText || '');
             if (Array.isArray(toolsUsed) && toolsUsed.length > 0) {
                 html += '<span class="embed-message-footnote">used: ' + escapeHtml(toolsUsed.join(', ')) + '</span>';
             }
@@ -660,6 +669,10 @@
                 pill.textContent = SURFACE_LABELS[surface] || surface;
                 surfacePills.appendChild(pill);
             });
+        }
+
+        function updateAutoNavigateVisibility() {
+            autoNavigateRow.hidden = currentSurfaces.indexOf('picsearch') === -1;
         }
 
         function renderIntentChip(entry) {

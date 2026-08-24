@@ -31,10 +31,12 @@ public sealed class PicSearchChatController : Controller
     public const string RateLimiterPolicyName = "picsearch-chat";
 
     private readonly IPicSearchChatService _chatService;
+    private readonly IMarkdownRenderer _markdownRenderer;
 
-    public PicSearchChatController(IPicSearchChatService chatService)
+    public PicSearchChatController(IPicSearchChatService chatService, IMarkdownRenderer markdownRenderer)
     {
         _chatService = chatService;
+        _markdownRenderer = markdownRenderer;
     }
 
     [HttpPost("ask")]
@@ -68,7 +70,8 @@ public sealed class PicSearchChatController : Controller
                     sessionToken,
                     request.Message,
                     request.UiSurfaces ?? [],
-                    request.PageContext),
+                    request.PageContext,
+                    request.AutoNavigate),
                 cancellationToken);
 
             if (!result.Succeeded)
@@ -101,11 +104,19 @@ public sealed class PicSearchChatController : Controller
                 }, cancellationToken);
             }
 
+            // Rendered server-side via the same Markdig pipeline (DisableHtml + a link-scheme
+            // allowlist) already used for AI Compare's responses — the model's output is grounded
+            // in markdown, and the embed panel has no client-side markdown interpreter (nor
+            // should it: this page's CSP has no 'unsafe-inline', so a client-side renderer would
+            // need its own injection-safety story instead of reusing this already-proven one).
+            var messageHtml = _markdownRenderer.Render(result.AssistantText).ToString();
+
             await WriteEventAsync(new
             {
                 type = "complete",
                 conversationId = result.ConversationId,
                 message = result.AssistantText,
+                messageHtml,
                 toolsUsed = result.ToolsUsed,
                 sessionTokenPresent = result.SessionTokenPresent,
                 sessionTokenValid = result.SessionTokenValid

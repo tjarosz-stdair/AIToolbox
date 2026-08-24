@@ -22,4 +22,10 @@ public sealed class PicSearchAskRequest
     /// <summary>Opaque, broker-supplied page context (e.g. a title/label for the chip) — passed
     /// through to the system prompt, never persisted beyond what a turn needs.</summary>
     public JsonElement? PageContext { get; set; }
+
+    /// <summary>Drives the "Auto-navigate PIC Search" checkbox behavior: when true, the system
+    /// prompt instructs the model to proactively invoke ui_ navigation tools instead of asking
+    /// the user's permission first. Defaults true so a caller that omits the field (or predates
+    /// the checkbox) still gets the "standard practice" behavior the checkbox represents.</summary>
+    public bool AutoNavigate { get; set; } = true;
 }

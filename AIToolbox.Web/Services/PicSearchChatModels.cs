@@ -7,7 +7,8 @@ public sealed record PicSearchTurnRequest(
     string? SessionToken,
     string UserMessage,
     IReadOnlyList<string> UiSurfaces,
-    JsonElement? PageContext);
+    JsonElement? PageContext,
+    bool AutoNavigate);
 
 /// <summary>
 /// Machine-readable codes for a failed turn — AIToolbox's own internal contract (nothing on the

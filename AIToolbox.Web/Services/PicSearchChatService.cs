@@ -166,7 +166,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
             var chatClient = _chatClientFactory.Create(provider);
             var chatOptions = new ChatOptions
             {
-                Instructions = BuildSystemPrompt(request.ContextKey, request.UiSurfaces),
+                Instructions = BuildSystemPrompt(request.ContextKey, request.UiSurfaces, request.AutoNavigate),
                 Tools = tools
             };
 
@@ -360,11 +360,23 @@ public sealed class PicSearchChatService : IPicSearchChatService
     // is the deliberately simple version — Conversation/ConversationMessage carry no persisted
     // "last known surfaces" field, so there is nothing to diff against across requests, and
     // restating achieves the same practical effect: a closed surface simply stops being mentioned.
-    private static string BuildSystemPrompt(string contextKey, IReadOnlyList<string> uiSurfaces)
+    private static string BuildSystemPrompt(string contextKey, IReadOnlyList<string> uiSurfaces, bool autoNavigate)
     {
         var surfaceLine = uiSurfaces.Count == 0
             ? "No additional screens are currently open — you can only answer from data, not navigate anywhere."
             : $"Currently open screens available for navigation: {string.Join(", ", uiSurfaces)}.";
+
+        // "Auto-navigate PIC Search" checkbox (checked by default) — the user's explicit call is
+        // that asking permission first ("do you want me to show you in the BOM?") is unnecessary
+        // friction; navigating proactively once you've already resolved the answer is the
+        // standard-practice behavior, not an exception. Unchecked reverts to asking first, for a
+        // user who wants to review before their screen changes out from under them.
+        var navigationLine = autoNavigate
+            ? "Auto-navigate is ON: once you've resolved an answer that has a corresponding screen (e.g. a part, a BOM), " +
+              "call the matching navigation tool immediately as part of your response. Don't ask the user whether they " +
+              "want you to show it to them first — showing it is standard practice, not an extra step to confirm."
+            : "Auto-navigate is OFF: don't call a navigation tool unless the user has asked to be shown something. If " +
+              "showing them would help, ask first rather than navigating unprompted.";
 
         return $"""
             You are a P21 product and parts assistant embedded in PIC Search.
@@ -377,6 +389,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
             the user something on their screen, it never returns product data. Never call a navigation tool expecting it to
             answer a question; resolve the answer from a data tool first, then optionally navigate to show your work.
             {surfaceLine}
+            {navigationLine}
             """;
     }
 

@@ -111,6 +111,59 @@ html, body {
     text-align: center;
 }
 
+/* The assistant bubble's content is server-rendered Markdown (Markdig, HTML disabled) — style the
+   semantic tags it actually emits, not inline styles (none are emitted). */
+.embed-message-assistant p {
+    margin: 0 0 0.5rem;
+}
+
+.embed-message-assistant p:last-child {
+    margin-bottom: 0;
+}
+
+.embed-message-assistant ul,
+.embed-message-assistant ol {
+    margin: 0 0 0.5rem;
+    padding-left: 1.25rem;
+}
+
+.embed-message-assistant code {
+    background: #e9ecef;
+    border-radius: 0.2rem;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.85em;
+}
+
+.embed-message-assistant pre {
+    background: #e9ecef;
+    border-radius: 0.35rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.embed-message-assistant pre code {
+    background: none;
+    padding: 0;
+}
+
+.embed-message-assistant table {
+    border-collapse: collapse;
+    max-width: 100%;
+    display: block;
+    overflow-x: auto;
+}
+
+.embed-message-assistant th,
+.embed-message-assistant td {
+    border: 1px solid #ced4da;
+    padding: 0.25rem 0.5rem;
+}
+
+.embed-message-assistant a {
+    color: #0d6efd;
+}
+
 .embed-message-footnote {
     display: block;
     margin-top: 0.25rem;
@@ -126,6 +179,23 @@ html, body {
     border: 1px dashed #90b8f8;
     border-radius: 0.5rem;
     padding: 0.25rem 0.5rem;
+}
+
+.embed-auto-navigate {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.75rem;
+    border-top: 1px solid #dee2e6;
+    background: #ffffff;
+    font-size: 0.8rem;
+    color: #495057;
+}
+
+.embed-auto-navigate label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    margin: 0;
 }
 
 .embed-composer {
