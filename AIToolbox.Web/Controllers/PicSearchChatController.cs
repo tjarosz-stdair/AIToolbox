@@ -128,6 +128,25 @@ public sealed class PicSearchChatController : Controller
         }
     }
 
+    [HttpPost("reset")]
+    public async Task<IActionResult> Reset([FromBody] PicSearchResetRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return Ok(new { success = false, code = PicSearchErrorCode.BadRequest, message = "A context is required." });
+        }
+
+        var sessionToken = Request.Headers.TryGetValue(SessionTokenHeaderName, out var headerValues)
+            ? headerValues.ToString()
+            : null;
+
+        var result = await _chatService.ResetConversationAsync(sessionToken, request.ContextKey, cancellationToken);
+
+        return Ok(result.Succeeded
+            ? new { success = true }
+            : new { success = false, code = result.Code, message = result.ErrorMessage });
+    }
+
     private async Task WriteEventAsync(object payload, CancellationToken cancellationToken)
     {
         await Response.WriteAsync(JsonSerializer.Serialize(payload), cancellationToken);

@@ -238,6 +238,37 @@ public sealed class PicSearchChatService : IPicSearchChatService
     }
 
     /// <summary>
+    /// Manual reset (Part 4.5.6): closes the active conversation for this sub+surface+context with
+    /// ClosedManual, same retention-countdown/purge treatment as any other reset trigger. No prior
+    /// caller ever triggered this — a direct browser session with no P21 broker driving context
+    /// changes never trips the automatic triggers (context change, turn cap, inactivity), so this
+    /// was the one reset path with no way to invoke it until now.
+    /// </summary>
+    public async Task<PicSearchResetResult> ResetConversationAsync(string? sessionToken, string contextKey, CancellationToken cancellationToken = default)
+    {
+        var tokenResult = await _sessionTokens.ValidateAsync(sessionToken, cancellationToken);
+
+        if (!tokenResult.Present)
+        {
+            return new PicSearchResetResult(false, PicSearchErrorCode.SessionTokenRequired, "A valid P21 Toolbox session token is required to use this chat.");
+        }
+
+        if (!tokenResult.IsValid)
+        {
+            _logger.LogWarning("Rejected picsearch chat reset: session token present but invalid ({Reason}).", tokenResult.RejectReason);
+            return new PicSearchResetResult(false, PicSearchErrorCode.SessionTokenRejected, $"Session token rejected ({tokenResult.RejectReason}).");
+        }
+
+        var conversation = await _conversations.GetActiveConversationAsync(tokenResult.Sub!, Surface, contextKey, cancellationToken);
+        if (conversation is not null)
+        {
+            await _conversations.CloseConversationAsync(conversation.Id, ConversationStatus.ClosedManual, cancellationToken);
+        }
+
+        return new PicSearchResetResult(true, null, null);
+    }
+
+    /// <summary>
     /// A ui_ call the 2-per-turn cap rejected (AiChatClientFactory's FunctionInvoker hook) comes
     /// back with a {"status":"rejected",...} result, not UiIntentFunction's own
     /// {"status":"queued"} — only the latter should ever reach the browser as a real intent.
@@ -368,13 +399,28 @@ public sealed class PicSearchChatService : IPicSearchChatService
 
         // "Auto-navigate PIC Search" checkbox (checked by default) — the user's explicit call is
         // that asking permission first ("do you want me to show you in the BOM?") is unnecessary
-        // friction; navigating proactively once you've already resolved the answer is the
-        // standard-practice behavior, not an exception. Unchecked reverts to asking first, for a
-        // user who wants to review before their screen changes out from under them.
+        // friction; navigating proactively once the answer is known is standard practice, not an
+        // exception. First wording (soft "don't ask, it's standard practice") was live-tested and
+        // didn't hold: the model skipped navigating on any turn where it answered from earlier
+        // conversation context rather than a fresh tool call this turn, and still asked permission
+        // instead of just navigating. This version is deliberately a hard MUST/forbidden-phrasing
+        // rule with a worked example, not a preference, and explicitly covers the from-memory case.
         var navigationLine = autoNavigate
-            ? "Auto-navigate is ON: once you've resolved an answer that has a corresponding screen (e.g. a part, a BOM), " +
-              "call the matching navigation tool immediately as part of your response. Don't ask the user whether they " +
-              "want you to show it to them first — showing it is standard practice, not an extra step to confirm."
+            ? """
+              Auto-navigate is ON. This is a hard rule, not a preference:
+              - Whenever your answer names a specific part, model, or BOM that a navigation tool covers, you MUST call
+                that navigation tool as part of the SAME response — every time, with no exceptions.
+              - This applies even when the answer came from earlier in this conversation rather than a tool call you
+                just made this turn. "I already told them this" is not a reason to skip navigating.
+              - You are FORBIDDEN from asking a yes/no question about whether to navigate or show something — no
+                "want me to show it in the BOM?", no "should I pull that up?", no "let me know if you'd like to see
+                it". Asking that question is exactly the behavior this setting exists to eliminate.
+              - Correct pattern: state the answer, then call the navigation tool in the same turn, with no question
+                mark about it anywhere in your reply.
+              - Incorrect pattern: state the answer, then ask the user whether they want it shown. Never do this
+                while auto-navigate is ON.
+              - The only valid reason to not navigate is that no navigation tool actually matches what you described.
+              """
             : "Auto-navigate is OFF: don't call a navigation tool unless the user has asked to be shown something. If " +
               "showing them would help, ask first rather than navigating unprompted.";
 
@@ -387,7 +433,8 @@ public sealed class PicSearchChatService : IPicSearchChatService
 
             You answer using data tools (MCP tools) first. Navigation (ui_-prefixed tools) is presentational only — it shows
             the user something on their screen, it never returns product data. Never call a navigation tool expecting it to
-            answer a question; resolve the answer from a data tool first, then optionally navigate to show your work.
+            answer a question; resolve the answer first (from a data tool call this turn, or from earlier in the
+            conversation), then navigate per the auto-navigate rule below.
             {surfaceLine}
             {navigationLine}
             """;

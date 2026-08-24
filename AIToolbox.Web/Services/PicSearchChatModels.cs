@@ -29,6 +29,12 @@ public static class PicSearchErrorCode
 /// FunctionCallContent.Arguments — directly serializable into the "intent" NDJSON event.</summary>
 public sealed record UiIntentDescriptor(string Name, string Kind, string Surface, IDictionary<string, object?> Arguments);
 
+/// <summary>Result of a manual conversation reset (Part 4.5.6's ClosedManual trigger — defined on
+/// ConversationStatus since that part was written, never wired to a caller until now). Closing a
+/// conversation that's already gone (or was never started) is treated as success: the caller's
+/// desired end state — no active conversation for this context — already holds either way.</summary>
+public sealed record PicSearchResetResult(bool Succeeded, string? Code, string? ErrorMessage);
+
 public sealed record PicSearchTurnResult(
     int ConversationId,
     bool ConversationWasReset,

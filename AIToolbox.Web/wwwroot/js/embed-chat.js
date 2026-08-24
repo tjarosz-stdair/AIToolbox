@@ -38,6 +38,7 @@
         var surfacePills = root.querySelector('[data-surface-pills]');
         var autoNavigateRow = root.querySelector('[data-auto-navigate-row]');
         var autoNavigateCheckbox = root.querySelector('[data-auto-navigate-checkbox]');
+        var resetButton = root.querySelector('[data-reset-button]');
 
         // ---- state ----
         var bridgeState = 'awaiting-init'; // awaiting-init | linked | unauthenticated | awaiting-token
@@ -342,6 +343,42 @@
             return combined.length > limit ? combined.slice(0, limit) : combined;
         }
 
+        // ---- manual reset ----
+
+        // A direct browser session (no P21 broker driving context changes) never trips the
+        // automatic reset triggers (context change, turn cap, inactivity) — this is the only way
+        // to start a fresh conversation for the current context without waiting one out.
+        function resetConversation() {
+            if (bridgeState !== 'linked' || turnState !== 'idle' || !contextKey) {
+                return;
+            }
+            setComposerEnabled(false);
+            fetch('/api/picsearch/reset', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-P21-Session-Token': sessionToken || ''
+                },
+                body: JSON.stringify({ contextKey: contextKey })
+            }).then(function (response) {
+                return response.json().catch(function () { return null; });
+            }).then(function (data) {
+                setComposerEnabled(bridgeState === 'linked');
+                if (!data || !data.success) {
+                    renderSystemNotice('Could not reset the conversation. Please try again.');
+                    return;
+                }
+                turnEpoch += 1;
+                ackJournal = [];
+                pendingIntents.clear();
+                clearTranscript();
+                renderSystemNotice('Conversation reset for ' + describeContext() + '.');
+            }).catch(function () {
+                setComposerEnabled(bridgeState === 'linked');
+                renderSystemNotice('Could not reset the conversation. Please try again.');
+            });
+        }
+
         function sendTurn(text) {
             var epochAtSend = turnEpoch;
             showThinking();
@@ -380,13 +417,15 @@
                         });
                         break;
                     case 'complete':
+                        var completeDurationMs = elapsedSinceThinkingMs();
                         hideThinking();
-                        renderAssistantMessage(message.messageHtml, message.message, message.toolsUsed);
+                        renderAssistantMessage(message.messageHtml, message.message, message.toolsUsed, completeDurationMs);
                         finishTurn();
                         break;
                     case 'error':
+                        var errorDurationMs = elapsedSinceThinkingMs();
                         hideThinking();
-                        onTurnError(message, text);
+                        onTurnError(message, text, errorDurationMs);
                         break;
                     default:
                         // Unknown event type — ignored silently so a future contract addition
@@ -399,8 +438,9 @@
                 if (!stillCurrent()) {
                     return;
                 }
+                var failureDurationMs = elapsedSinceThinkingMs();
                 hideThinking();
-                renderAssistantError('The assistant could not be reached. Please try again.');
+                renderAssistantError('The assistant could not be reached. Please try again.', failureDurationMs);
                 finishTurn();
             }
 
@@ -428,8 +468,9 @@
                         if (!stillCurrent()) {
                             return;
                         }
+                        var unexpectedDurationMs = elapsedSinceThinkingMs();
                         hideThinking();
-                        renderAssistantError('The assistant returned an unexpected response (' + response.status + ').');
+                        renderAssistantError('The assistant returned an unexpected response (' + response.status + ').', unexpectedDurationMs);
                         finishTurn();
                     });
                 }
@@ -438,7 +479,7 @@
                 window.clearTimeout(ceilingHandle);
             });
 
-            function onTurnError(message, originalText) {
+            function onTurnError(message, originalText, durationMs) {
                 if (message.code === 'session_token_rejected' || message.code === 'session_token_required') {
                     pendingMessage = originalText;
                     turnState = 'deferred';
@@ -446,7 +487,7 @@
                     return;
                 }
 
-                renderAssistantError(message.message || 'Something went wrong.');
+                renderAssistantError(message.message || 'Something went wrong.', durationMs);
                 finishTurn();
             }
         }
@@ -555,6 +596,20 @@
             return escapeHtml(text).replace(/\n/g, '<br>');
         }
 
+        // Anchored to showThinking's timestamp (send time) rather than a separate clock, so this
+        // is genuinely "how long the round trip took" — network + server processing together, not
+        // just the server's own reported duration (which the NDJSON contract doesn't carry anyway).
+        function elapsedSinceThinkingMs() {
+            return thinkingStartedAtMs !== null ? Date.now() - thinkingStartedAtMs : null;
+        }
+
+        function formatDuration(ms) {
+            if (typeof ms !== 'number' || ms < 0) {
+                return null;
+            }
+            return ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(1) + 's';
+        }
+
         function appendBubble(cssClass, innerHtml) {
             var el = document.createElement('div');
             el.className = 'embed-message ' + cssClass;
@@ -568,20 +623,33 @@
             appendBubble('embed-message-user', textToHtml(text));
         }
 
-        function renderAssistantMessage(messageHtml, plainText, toolsUsed) {
+        function renderAssistantMessage(messageHtml, plainText, toolsUsed, durationMs) {
             // messageHtml is rendered server-side by IMarkdownRenderer (Markdig with HTML
             // disabled and a link-scheme allowlist) — the same pipeline already used for AI
             // Compare's responses. Fall back to escaped plain text only if it's ever missing
             // (e.g. an older cached response shape), never render plainText as HTML directly.
             var html = messageHtml || textToHtml(plainText || '');
+            var footnoteParts = [];
+            var duration = formatDuration(durationMs);
+            if (duration) {
+                footnoteParts.push(duration);
+            }
             if (Array.isArray(toolsUsed) && toolsUsed.length > 0) {
-                html += '<span class="embed-message-footnote">used: ' + escapeHtml(toolsUsed.join(', ')) + '</span>';
+                footnoteParts.push('used: ' + escapeHtml(toolsUsed.join(', ')));
+            }
+            if (footnoteParts.length > 0) {
+                html += '<span class="embed-message-footnote">' + footnoteParts.join(' · ') + '</span>';
             }
             appendBubble('embed-message-assistant', html);
         }
 
-        function renderAssistantError(text) {
-            appendBubble('embed-message-error', textToHtml(text));
+        function renderAssistantError(text, durationMs) {
+            var html = textToHtml(text);
+            var duration = formatDuration(durationMs);
+            if (duration) {
+                html += '<span class="embed-message-footnote">' + duration + '</span>';
+            }
+            appendBubble('embed-message-error', html);
         }
 
         function renderSystemNotice(text) {
@@ -693,6 +761,7 @@
         function setComposerEnabled(enabled) {
             composerInput.disabled = !enabled;
             composerButton.disabled = !enabled;
+            resetButton.disabled = !enabled;
         }
 
         function showBanner(text) {
@@ -736,6 +805,8 @@
             composerInput.value = '';
             submitMessage(text);
         });
+
+        resetButton.addEventListener('click', resetConversation);
 
         setComposerEnabled(false);
         renderContextChip();
