@@ -33,6 +33,8 @@ builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Sto
 builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));
 builder.Services.Configure<SessionTokenValidationOptions>(builder.Configuration.GetSection("SessionTokenValidation"));
 builder.Services.Configure<EmbedOptions>(builder.Configuration.GetSection("Embed"));
+builder.Services.Configure<FfmpegOptions>(builder.Configuration.GetSection("Ffmpeg"));
+builder.Services.Configure<SpeechAudioStorageOptions>(builder.Configuration.GetSection("SpeechAudioStorage"));
 
 var dataProtectionOptions = builder.Configuration.GetSection("DataProtection").Get<AIToolsDataProtectionOptions>()
     ?? new AIToolsDataProtectionOptions();
@@ -94,6 +96,8 @@ builder.Services.AddScoped<IAccessControlService, AccessControlService>();
 builder.Services.AddScoped<IExternalUserClaimsEnricher, ExternalUserClaimsEnricher>();
 builder.Services.AddScoped<IAiProviderClient, AiProviderClient>();
 builder.Services.AddScoped<ISpeechTranscriptionService, SpeechTranscriptionService>();
+builder.Services.AddScoped<ISpeechAudioTranscoder, FfmpegSpeechAudioTranscoder>();
+builder.Services.AddScoped<ISpeechAudioArchiveService, SpeechAudioArchiveService>();
 builder.Services.AddScoped<IPromptOrchestrator, PromptOrchestrator>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 builder.Services.AddScoped<IProductParsingService, ProductParsingService>();
@@ -102,6 +106,7 @@ builder.Services.AddScoped<IAiBatchService, AiBatchService>();
 builder.Services.AddSingleton<IProductParsingJobQueue, ProductParsingJobQueue>();
 builder.Services.AddHostedService<ProductParsingBackgroundService>();
 builder.Services.AddHostedService<AiBatchPollingService>();
+builder.Services.AddHostedService<SpeechAudioRetentionPurgeService>();
 builder.Services.AddSingleton<IMarkdownRenderer, MarkdownRenderer>();
 builder.Services.AddScoped<IAuthorizationHandler, ActiveUserAuthorizationHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminUserAuthorizationHandler>();
