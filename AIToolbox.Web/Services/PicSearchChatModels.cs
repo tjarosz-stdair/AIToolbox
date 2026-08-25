@@ -1,6 +1,11 @@
 using System.Text.Json;
+using AIToolbox.Web.Models;
 
 namespace AIToolbox.Web.Services;
+
+/// <summary>One tool call about to run, reported live so a streaming caller can show real status
+/// ("Looking up part specs…") instead of a static placeholder for the whole tool-calling loop.</summary>
+public sealed record ToolStepEvent(string ToolName, string? Description);
 
 public sealed record PicSearchTurnRequest(
     string ContextKey,
@@ -22,6 +27,7 @@ public static class PicSearchErrorCode
     public const string NotConfigured = "not_configured";
     public const string TurnFailed = "turn_failed";
     public const string BadRequest = "bad_request";
+    public const string TranscriptionFailed = "transcription_failed";
 }
 
 /// <summary>One ui_ tool call the model actually made this turn and that queued successfully
@@ -34,6 +40,19 @@ public sealed record UiIntentDescriptor(string Name, string Kind, string Surface
 /// conversation that's already gone (or was never started) is treated as success: the caller's
 /// desired end state — no active conversation for this context — already holds either way.</summary>
 public sealed record PicSearchResetResult(bool Succeeded, string? Code, string? ErrorMessage);
+
+/// <summary>One stored message reduced to just its displayable text, for replaying an already-
+/// Active conversation's history into the client on reopen. A message that carried only tool-call
+/// /tool-result content (no TextContent) never produces one of these — see
+/// PicSearchChatService.GetActiveConversationHistoryAsync.</summary>
+public sealed record PicSearchHistoryTurn(string Role, string Text);
+
+public sealed record PicSearchHistoryResult(
+    bool Succeeded,
+    string? Code,
+    string? ErrorMessage,
+    Conversation? Conversation,
+    IReadOnlyList<PicSearchHistoryTurn> Messages);
 
 public sealed record PicSearchTurnResult(
     int ConversationId,

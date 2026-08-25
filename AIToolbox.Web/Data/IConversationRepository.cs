@@ -22,6 +22,13 @@ public interface IConversationRepository
 
     Task<Conversation?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
 
+    /// <summary>Paged, filtered browse for the admin "AI Chat" review tab — every other method on
+    /// this interface is an exact-key lookup or part of the live turn-by-turn write path; this is
+    /// the only list/search query.</summary>
+    Task<ConversationListResult> GetConversationsAsync(
+        ConversationListFilter filter,
+        CancellationToken cancellationToken = default);
+
     Task<int> CreateConversationAsync(Conversation conversation, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ConversationMessage>> GetMessagesAsync(int conversationId, CancellationToken cancellationToken = default);

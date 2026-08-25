@@ -17,6 +17,7 @@
         data-parent-origin="@Model.ExpectedParentOrigin"
         data-max-message-length="@Model.MaxMessageLength"
         data-preferred-width="@Model.PreferredWidth"
+        data-speech-enabled="@Model.SpeechEnabled.ToString().ToLowerInvariant()"
         class="embed-root">
 
         <div class="embed-header">
@@ -25,6 +26,11 @@
         </div>
 
         <div class="embed-banner" data-status-banner hidden></div>
+
+        <div class="embed-resume-banner" data-resume-banner hidden>
+            <span data-resume-banner-text></span>
+            <button type="button" class="embed-resume-banner-button" data-resume-banner-reset>Start new</button>
+        </div>
 
         <div class="embed-transcript" data-transcript></div>
 
@@ -45,6 +51,12 @@
                 placeholder="Ask a question&hellip;"
                 disabled
                 autocomplete="off" />
+            <button type="button" class="embed-mic-button" data-mic-button aria-label="Voice input" disabled hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                    <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3z" />
+                    <path d="M19 11a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 0 0-2 0 7 7 0 0 0 6 6.92V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.08A7 7 0 0 0 19 11z" />
+                </svg>
+            </button>
             <button type="submit" class="embed-composer-button" data-composer-button disabled>Send</button>
         </form>
     </div>

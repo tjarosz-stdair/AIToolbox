@@ -1,17 +1,22 @@
+@using AIToolbox.Web.Models
 @model EventLogsViewModel
 
 @{
     ViewData["Title"] = "Event Logs";
     var logins = Model.UserLogins;
     var submissions = Model.AiSubmissions;
+    var conversations = Model.Conversations;
+    var rollup = Model.UsageRollupSummary;
     var activeTab = Context.Request.Query["tab"].ToString();
-    var showSubmissions = string.Equals(activeTab, "ai-submissions", StringComparison.OrdinalIgnoreCase);
+    var showAiChat = string.Equals(activeTab, "ai-chat", StringComparison.OrdinalIgnoreCase);
+    var showSubmissions = !showAiChat && string.Equals(activeTab, "ai-submissions", StringComparison.OrdinalIgnoreCase);
+    var showUserLogins = !showAiChat && !showSubmissions;
 }
 
 <div class="page-heading">
     <div>
         <h1>Event Logs</h1>
-        <p class="text-muted mb-0">Review recorded application events and authentication activity.</p>
+        <p class="text-muted mb-0">Review recorded application events, authentication activity, and AI chat conversations.</p>
     </div>
     <div class="page-actions">
         <a asp-controller="Admin" asp-action="Index" class="btn btn-outline-secondary">Admin Dashboard</a>
@@ -20,7 +25,7 @@
 
 <ul class="nav nav-tabs api-doc-tabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link @(showSubmissions ? "" : "active")" id="user-logins-tab" data-bs-toggle="tab" data-bs-target="#user-logins" type="button" role="tab" aria-controls="user-logins" aria-selected="@(showSubmissions ? "false" : "true")">
+        <button class="nav-link @(showUserLogins ? "active" : "")" id="user-logins-tab" data-bs-toggle="tab" data-bs-target="#user-logins" type="button" role="tab" aria-controls="user-logins" aria-selected="@(showUserLogins ? "true" : "false")">
             User Logins <span class="badge text-bg-secondary">@logins.TotalCount.ToString("N0")</span>
         </button>
     </li>
@@ -29,10 +34,15 @@
             AI Submissions <span class="badge text-bg-secondary">@submissions.TotalCount.ToString("N0")</span>
         </button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(showAiChat ? "active" : "")" id="ai-chat-tab" data-bs-toggle="tab" data-bs-target="#ai-chat" type="button" role="tab" aria-controls="ai-chat" aria-selected="@(showAiChat ? "true" : "false")">
+            AI Chat <span class="badge text-bg-secondary">@conversations.TotalCount.ToString("N0")</span>
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content api-doc-tab-content">
-    <section class="tab-pane fade @(showSubmissions ? "" : "show active")" id="user-logins" role="tabpanel" aria-labelledby="user-logins-tab" tabindex="0">
+    <section class="tab-pane fade @(showUserLogins ? "show active" : "")" id="user-logins" role="tabpanel" aria-labelledby="user-logins-tab" tabindex="0">
         <form asp-action="Index" method="get" class="tool-surface mb-3">
             <input type="hidden" name="tab" value="user-logins" />
             <div class="library-filter-grid">
@@ -251,6 +261,234 @@
             }
         </section>
     </section>
+
+    <section class="tab-pane fade @(showAiChat ? "show active" : "")" id="ai-chat" role="tabpanel" aria-labelledby="ai-chat-tab" tabindex="0">
+        @if (rollup is not null)
+        {
+            <section class="tool-surface mb-3">
+                <div class="section-heading">
+                    <h2>Usage Summary</h2>
+                    <span class="text-muted small">Kept indefinitely — survives conversation purge</span>
+                </div>
+                <form asp-action="Index" method="get" class="mb-3">
+                    <input type="hidden" name="tab" value="ai-chat" />
+                    <div class="library-filter-grid">
+                        <div>
+                            <label class="form-label" for="rollupFrom">From</label>
+                            <input type="date" class="form-control" id="rollupFrom" name="rollupFrom" value="@rollup.From.ToString("yyyy-MM-dd")" />
+                        </div>
+                        <div>
+                            <label class="form-label" for="rollupTo">To</label>
+                            <input type="date" class="form-control" id="rollupTo" name="rollupTo" value="@rollup.To.ToString("yyyy-MM-dd")" />
+                        </div>
+                        <div>
+                            <label class="form-label" for="rollupSurface">Surface</label>
+                            <select class="form-select" id="rollupSurface" name="rollupSurface">
+                                <option value="all" selected="@(rollup.Surface == "all")">All surfaces</option>
+                                @foreach (var option in rollup.Surfaces)
+                                {
+                                    <option value="@option" selected="@(rollup.Surface == option)">@option</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="library-filter-actions">
+                            <button type="submit" class="btn btn-primary">Apply</button>
+                            <a asp-action="Index" asp-route-tab="ai-chat" class="btn btn-outline-secondary">Reset</a>
+                        </div>
+                    </div>
+                </form>
+
+                @if (rollup.Rows.Count == 0)
+                {
+                    <p class="text-muted mb-0">No usage recorded in this date range.</p>
+                }
+                else
+                {
+                    <div class="table-surface">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Surface</th>
+                                    <th>Conversations</th>
+                                    <th>Turns</th>
+                                    <th>Tokens In</th>
+                                    <th>Tokens Out</th>
+                                    <th>Est. Cost</th>
+                                    <th>Degraded</th>
+                                    <th>Budget Exhausted</th>
+                                    <th>Failures</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var row in rollup.Rows)
+                            {
+                                <tr>
+                                    <td>@row.Date.ToString("yyyy-MM-dd")</td>
+                                    <td>@row.Surface</td>
+                                    <td>@row.ConversationCount.ToString("N0")</td>
+                                    <td>@row.TurnCount.ToString("N0")</td>
+                                    <td>@row.TokensIn.ToString("N0")</td>
+                                    <td>@row.TokensOut.ToString("N0")</td>
+                                    <td>@row.EstimatedCostUsd.ToString("C4")</td>
+                                    <td>@row.DegradedTierCount.ToString("N0")</td>
+                                    <td>@row.BudgetExhaustedCount.ToString("N0")</td>
+                                    <td>@row.FailureCount.ToString("N0")</td>
+                                </tr>
+                            }
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold">
+                                    <td colspan="2">Total</td>
+                                    <td>@rollup.Totals.ConversationCount.ToString("N0")</td>
+                                    <td>@rollup.Totals.TurnCount.ToString("N0")</td>
+                                    <td>@rollup.Totals.TokensIn.ToString("N0")</td>
+                                    <td>@rollup.Totals.TokensOut.ToString("N0")</td>
+                                    <td>@rollup.Totals.EstimatedCostUsd.ToString("C4")</td>
+                                    <td>@rollup.Totals.DegradedTierCount.ToString("N0")</td>
+                                    <td>@rollup.Totals.BudgetExhaustedCount.ToString("N0")</td>
+                                    <td>@rollup.Totals.FailureCount.ToString("N0")</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+
+        <form asp-action="Index" method="get" class="tool-surface mb-3">
+            <input type="hidden" name="tab" value="ai-chat" />
+            <div class="library-filter-grid">
+                <div>
+                    <label class="form-label" for="surface">Surface</label>
+                    <select class="form-select" id="surface" name="surface">
+                        <option value="all" selected="@(conversations.Surface == "all")">All surfaces</option>
+                        @foreach (var option in conversations.Surfaces)
+                        {
+                            <option value="@option" selected="@(conversations.Surface == option)">@option</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label" for="status">Status</label>
+                    <select class="form-select" id="status" name="status">
+                        <option value="all" selected="@(conversations.Status == "all")">All statuses</option>
+                        @foreach (var value in Enum.GetValues<ConversationStatus>())
+                        {
+                            <option value="@value" selected="@(conversations.Status == value.ToString())">@FormatStatusLabel(value)</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label" for="contextKey">Context key contains</label>
+                    <input type="text" class="form-control" id="contextKey" name="contextKey" value="@conversations.ContextKey" placeholder="e.g. an order number" />
+                </div>
+                <div class="library-filter-actions">
+                    <button type="submit" class="btn btn-primary">Apply</button>
+                    <a asp-action="Index" asp-route-tab="ai-chat" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </div>
+        </form>
+
+        <section class="tool-surface">
+            <div class="section-heading">
+                <h2>Conversations</h2>
+                <span class="text-muted small">@conversations.TotalCount.ToString("N0") conversations</span>
+            </div>
+            <p class="text-muted small">Closed conversations are permanently deleted @Model.RetentionDays days after they close. Active conversations are never purged. (The usage summary above is kept indefinitely regardless.)</p>
+
+            @if (conversations.Items.Count == 0)
+            {
+                <p class="text-muted mb-0">No conversations match this view yet.</p>
+            }
+            else
+            {
+                <div class="table-surface">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Sub</th>
+                                <th>Surface</th>
+                                <th>Context Key</th>
+                                <th>Status</th>
+                                <th>Turns</th>
+                                <th>Tokens In/Out</th>
+                                <th>Created</th>
+                                <th>Last Active</th>
+                                <th>Closed</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var item in conversations.Items)
+                        {
+                            <tr>
+                                <td class="event-log-long">@item.Sub</td>
+                                <td>@item.Surface</td>
+                                <td class="event-log-long">@item.ContextKey</td>
+                                <td>
+                                    @if (item.Status == ConversationStatus.Active)
+                                    {
+                                        <span class="job-chip status succeeded">Active</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="job-chip private">Closed</span>
+                                        <div class="text-muted small">@FormatStatusLabel(item.Status)</div>
+                                    }
+                                </td>
+                                <td>@item.UserTurnCount.ToString("N0")</td>
+                                <td>@item.TokensIn.ToString("N0") / @item.TokensOut.ToString("N0")</td>
+                                <td>
+                                    <strong>@item.CreatedUtc.ToLocalTime().ToString("g")</strong>
+                                    <div class="text-muted small">@item.CreatedUtc.ToString("u")</div>
+                                </td>
+                                <td>
+                                    <strong>@item.LastActiveUtc.ToLocalTime().ToString("g")</strong>
+                                    <div class="text-muted small">@item.LastActiveUtc.ToString("u")</div>
+                                </td>
+                                <td>
+                                    @if (item.ClosedUtc is DateTime closedUtc)
+                                    {
+                                        <strong>@closedUtc.ToLocalTime().ToString("g")</strong>
+                                        <div class="text-muted small">@closedUtc.ToString("u")</div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">&mdash;</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <a asp-action="Conversation" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary">View</a>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+
+                <nav class="pagination-row" aria-label="Conversation pages">
+                    <span class="text-muted small">Page @conversations.Page of @conversations.TotalPages</span>
+                    <div class="page-actions">
+                        <a asp-action="Index"
+                           asp-route-tab="ai-chat"
+                           asp-route-surface="@conversations.Surface"
+                           asp-route-status="@conversations.Status"
+                           asp-route-contextKey="@conversations.ContextKey"
+                           asp-route-page="@(conversations.Page - 1)"
+                           class="btn btn-sm btn-outline-secondary @(conversations.Page <= 1 ? "disabled" : "")">Previous</a>
+                        <a asp-action="Index"
+                           asp-route-tab="ai-chat"
+                           asp-route-surface="@conversations.Surface"
+                           asp-route-status="@conversations.Status"
+                           asp-route-contextKey="@conversations.ContextKey"
+                           asp-route-page="@(conversations.Page + 1)"
+                           class="btn btn-sm btn-outline-secondary @(conversations.Page >= conversations.TotalPages ? "disabled" : "")">Next</a>
+                    </div>
+                </nav>
+            }
+        </section>
+    </section>
 </div>
 
 @functions {
@@ -260,5 +498,19 @@
         var minutes = totalSeconds / 60;
         var seconds = totalSeconds % 60;
         return minutes > 0 ? $"{minutes} min {seconds} sec" : $"{seconds} sec";
+    }
+
+    private static string FormatStatusLabel(ConversationStatus status)
+    {
+        return status switch
+        {
+            ConversationStatus.Active => "Active",
+            ConversationStatus.ClosedManual => "Closed (manual)",
+            ConversationStatus.ClosedContextChange => "Closed (context changed)",
+            ConversationStatus.ClosedTurnCap => "Closed (turn cap)",
+            ConversationStatus.ClosedTokenCap => "Closed (token cap)",
+            ConversationStatus.ClosedInactivity => "Closed (inactivity)",
+            _ => status.ToString()
+        };
     }
 }

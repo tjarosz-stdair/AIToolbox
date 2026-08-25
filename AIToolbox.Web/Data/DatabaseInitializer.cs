@@ -861,6 +861,26 @@ public sealed class DatabaseInitializer
                 ON dbo.McpClientCredentials(Surface);
         END;
 
+        IF OBJECT_ID('dbo.ExternalResources', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.ExternalResources
+            (
+                Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_ExternalResources PRIMARY KEY,
+                ResourceKey NVARCHAR(80) NOT NULL,
+                ResourceType NVARCHAR(50) NOT NULL,
+                DisplayName NVARCHAR(150) NOT NULL,
+                ConfigJson NVARCHAR(MAX) NULL,
+                SecretCipherText NVARCHAR(MAX) NULL,
+                SecretLastUpdatedUtc DATETIME2 NULL,
+                IsEnabled BIT NOT NULL CONSTRAINT DF_ExternalResources_IsEnabled DEFAULT(1),
+                CreatedUtc DATETIME2 NOT NULL CONSTRAINT DF_ExternalResources_CreatedUtc DEFAULT(SYSUTCDATETIME()),
+                UpdatedUtc DATETIME2 NOT NULL CONSTRAINT DF_ExternalResources_UpdatedUtc DEFAULT(SYSUTCDATETIME())
+            );
+
+            CREATE UNIQUE INDEX UX_ExternalResources_ResourceKey
+                ON dbo.ExternalResources(ResourceKey);
+        END;
+
         IF OBJECT_ID('dbo.Conversations', 'U') IS NULL
         BEGIN
             CREATE TABLE dbo.Conversations

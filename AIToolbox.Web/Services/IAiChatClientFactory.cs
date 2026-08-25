@@ -12,5 +12,10 @@ public interface IAiChatClientFactory
     /// loop needs, which the flat-prompt AiProviderClient API does not. Only AiProviderType.
     /// OpenAiCompatible, AzureOpenAi, and Anthropic are supported for tool calling today.
     /// </summary>
-    IChatClient Create(AiProvider provider);
+    /// <param name="onToolStep">
+    /// Optional callback invoked once per tool call, right before it runs, so a caller streaming
+    /// an NDJSON response can report live status ("Looking up part specs…") instead of a static
+    /// placeholder for the whole (possibly multi-iteration) tool-calling loop.
+    /// </param>
+    IChatClient Create(AiProvider provider, Func<ToolStepEvent, CancellationToken, Task>? onToolStep = null);
 }

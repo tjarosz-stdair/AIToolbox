@@ -1,0 +1,18 @@
+@model ExternalResourceFormViewModel
+
+@{
+    ViewData["Title"] = "Add External Resource";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Add External Resource</h1>
+        <p class="text-muted mb-0">Configure Azure Speech-to-Text or another bolt-on service. Credentials are encrypted before being stored in SQL Server.</p>
+    </div>
+</div>
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

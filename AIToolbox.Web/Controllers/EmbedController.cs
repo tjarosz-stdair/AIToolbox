@@ -1,3 +1,5 @@
+using AIToolbox.Web.Data;
+using AIToolbox.Web.Models;
 using AIToolbox.Web.Security;
 using AIToolbox.Web.ViewModels;
 using Microsoft.AspNetCore.Authorization;
@@ -17,14 +19,16 @@ namespace AIToolbox.Web.Controllers;
 public sealed class EmbedController : Controller
 {
     private readonly IEmbedOriginResolver _originResolver;
+    private readonly IExternalResourceRepository _externalResources;
 
-    public EmbedController(IEmbedOriginResolver originResolver)
+    public EmbedController(IEmbedOriginResolver originResolver, IExternalResourceRepository externalResources)
     {
         _originResolver = originResolver;
+        _externalResources = externalResources;
     }
 
     [HttpGet("chat")]
-    public IActionResult Chat([FromQuery(Name = "parentOrigin")] string? parentOrigin)
+    public async Task<IActionResult> Chat([FromQuery(Name = "parentOrigin")] string? parentOrigin, CancellationToken cancellationToken)
     {
         var resolvedOrigin = _originResolver.Resolve(parentOrigin);
         if (resolvedOrigin is null)
@@ -35,7 +39,12 @@ public sealed class EmbedController : Controller
         }
 
         ApplyEmbedHeaders(resolvedOrigin);
-        return View("Chat", new EmbedChatViewModel { ExpectedParentOrigin = resolvedOrigin });
+        var speechResource = await _externalResources.GetEnabledByTypeAsync(ExternalResourceType.AzureSpeech, cancellationToken);
+        return View("Chat", new EmbedChatViewModel
+        {
+            ExpectedParentOrigin = resolvedOrigin,
+            SpeechEnabled = speechResource is not null
+        });
     }
 
     private void ApplyEmbedHeaders(string resolvedOrigin)

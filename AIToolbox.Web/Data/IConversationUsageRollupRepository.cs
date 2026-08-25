@@ -1,3 +1,5 @@
+using AIToolbox.Web.Models;
+
 namespace AIToolbox.Web.Data;
 
 public interface IConversationUsageRollupRepository
@@ -19,5 +21,14 @@ public interface IConversationUsageRollupRepository
         int degradedTierDelta = 0,
         int budgetExhaustedDelta = 0,
         int failureDelta = 0,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The read side that's never existed — this is what remains once individual
+    /// conversations age out of the retention window and get hard-deleted; the admin "AI Chat"
+    /// review tab's usage summary panel is the only consumer.</summary>
+    Task<IReadOnlyList<ConversationUsageRollup>> GetAsync(
+        DateOnly fromDate,
+        DateOnly toDate,
+        string surface,
         CancellationToken cancellationToken = default);
 }

@@ -34,11 +34,16 @@
         var composerInput = root.querySelector('[data-composer-input]');
         var composerButton = root.querySelector('[data-composer-button]');
         var statusBanner = root.querySelector('[data-status-banner]');
+        var resumeBanner = root.querySelector('[data-resume-banner]');
+        var resumeBannerText = root.querySelector('[data-resume-banner-text]');
+        var resumeBannerResetButton = root.querySelector('[data-resume-banner-reset]');
         var contextChip = root.querySelector('[data-context-chip]');
         var surfacePills = root.querySelector('[data-surface-pills]');
         var autoNavigateRow = root.querySelector('[data-auto-navigate-row]');
         var autoNavigateCheckbox = root.querySelector('[data-auto-navigate-checkbox]');
         var resetButton = root.querySelector('[data-reset-button]');
+        var micButton = root.querySelector('[data-mic-button]');
+        var speechEnabled = root.dataset.speechEnabled === 'true';
 
         // ---- state ----
         var bridgeState = 'awaiting-init'; // awaiting-init | linked | unauthenticated | awaiting-token
@@ -60,6 +65,23 @@
         var thinkingElement = null;
         var thinkingTickHandle = null;
         var thinkingStartedAtMs = null;
+        // Most recent live tool-step label (from the "toolStep" NDJSON event) -- shown by
+        // updateThinkingCopy() instead of the time-tiered copy while it's recent, so a multi-tool
+        // turn reads as "Looking up part specs..." rather than just "Still working...".
+        var latestToolStepLabel = null;
+        var latestToolStepAtMs = null;
+        var mediaRecorder = null;
+        var recordedChunks = [];
+        var micStream = null;
+        var micSafetyTimeoutHandle = null;
+        var MIC_MAX_RECORDING_MS = 60000;
+        // Set from aitoolbox:init — true only for the Chrome extension side panel broker, which
+        // lacks the UX affordance to show a getUserMedia permission prompt at all (Chrome
+        // resolves the request as denied instantly, no dialog ever shown). When true, recording
+        // is delegated up to the broker's own offscreen document instead of calling
+        // getUserMedia locally. Standalone PIC Search and the admin test harness never set this.
+        var micDelegated = false;
+        var micRecording = false;
 
         // ---- origin-validated bridge plumbing ----
 
@@ -111,6 +133,12 @@
                 case 'aitoolbox:visibility':
                     onVisibility(data);
                     break;
+                case 'aitoolbox:mic-audio':
+                    onMicAudio(data);
+                    break;
+                case 'aitoolbox:mic-error':
+                    onMicError(data);
+                    break;
                 default:
                     // Forward-compatible: an unrecognized message type from a newer broker is
                     // ignored, not an error.
@@ -125,6 +153,7 @@
             contextKey = data.contextKey || null;
             currentPageContext = data.pageContext || null;
             currentSurfaces = Array.isArray(data.surfaces) ? data.surfaces : [];
+            micDelegated = !!data.micDelegated;
             renderContextChip();
             renderSurfacePills();
             updateAutoNavigateVisibility();
@@ -160,6 +189,7 @@
                 ackJournal = [];
                 pendingIntents.clear();
                 clearTranscript();
+                hideResumeBanner();
                 renderSystemNotice('Starting a new conversation for ' + describeContext() + '.');
                 if (droppedPendingMessage) {
                     renderSystemNotice("Your last message wasn't sent — the context changed before it could go through.");
@@ -219,6 +249,7 @@
             bridgeState = 'linked';
             setComposerEnabled(turnState === 'idle');
             hideBanner();
+            fetchActiveConversationHistory();
         }
 
         function enterUnauthenticated(message) {
@@ -372,10 +403,240 @@
                 ackJournal = [];
                 pendingIntents.clear();
                 clearTranscript();
+                hideResumeBanner();
                 renderSystemNotice('Conversation reset for ' + describeContext() + '.');
             }).catch(function () {
                 setComposerEnabled(bridgeState === 'linked');
                 renderSystemNotice('Could not reset the conversation. Please try again.');
+            });
+        }
+
+        // ---- resuming an already-active conversation ----
+        //
+        // SubmitTurnAsync already finds and continues an Active conversation server-side for this
+        // sub+surface+contextKey (see PicSearchChatService) -- this just lets the browser reflect
+        // that on load instead of always starting from a blank transcript. Fired once contextKey
+        // and sessionToken are both known (right after linkWithToken), well before the user could
+        // have sent anything themselves.
+
+        function fetchActiveConversationHistory() {
+            if (!contextKey || !sessionToken) {
+                return;
+            }
+            var contextKeyAtFetch = contextKey;
+            var turnEpochAtFetch = turnEpoch;
+            fetch('/api/picsearch/history', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-P21-Session-Token': sessionToken
+                },
+                body: JSON.stringify({ contextKey: contextKey })
+            }).then(function (response) {
+                return response.json().catch(function () { return null; });
+            }).then(function (data) {
+                if (!data || !data.success || !data.hasActiveConversation) {
+                    return;
+                }
+                // Stale by the time it arrived -- context changed, a reset happened, or the user
+                // already sent/received a live message while this was in flight. Any of those
+                // must win over a late history response; never clobber real, current content.
+                if (contextKeyAtFetch !== contextKey || turnEpochAtFetch !== turnEpoch || transcript.children.length > 0) {
+                    return;
+                }
+                (data.messages || []).forEach(function (item) {
+                    if (item.role === 'assistant') {
+                        renderAssistantMessage(item.html, item.text, null, null);
+                    } else {
+                        renderUserMessage(item.text);
+                    }
+                });
+                showResumeBanner(data.turnCount);
+            }).catch(function () {
+                // Best effort only -- resuming history is a nice-to-have, never blocks the chat
+                // from working.
+            });
+        }
+
+        // ---- voice input ----
+        //
+        // Voice-to-text only, never read-back: a transcript populates the composer input for the
+        // user to review and edit, exactly like typed text — it never auto-submits. The mic button
+        // itself is only ever shown when data-speech-enabled is true (decided server-side, see
+        // EmbedController) AND the browser actually supports MediaRecorder/getUserMedia; Chrome,
+        // the only real target here, has both.
+
+        function micSupported() {
+            if (!speechEnabled) {
+                return false;
+            }
+            if (micDelegated) {
+                return true; // capture happens in the broker's own offscreen document, not here
+            }
+            return typeof window.MediaRecorder === 'function'
+                && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        }
+
+        function toggleRecording() {
+            if (micDelegated) {
+                if (micRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+                return;
+            }
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+                return;
+            }
+            startRecording();
+        }
+
+        function startRecording() {
+            if (bridgeState !== 'linked' || turnState !== 'idle') {
+                return;
+            }
+
+            if (micDelegated) {
+                micRecording = true;
+                micButton.classList.add('is-recording');
+                micSafetyTimeoutHandle = window.setTimeout(function () {
+                    if (micRecording) {
+                        stopRecording();
+                    }
+                }, MIC_MAX_RECORDING_MS);
+                postToParent({ type: 'aitoolbox:mic-start', version: 1 });
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+                micStream = stream;
+                recordedChunks = [];
+
+                try {
+                    mediaRecorder = new MediaRecorder(stream);
+                } catch (e) {
+                    releaseMicStream();
+                    renderSystemNotice('Voice input could not start on this browser.');
+                    return;
+                }
+
+                mediaRecorder.addEventListener('dataavailable', function (event) {
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                });
+                mediaRecorder.addEventListener('stop', onRecordingStopped);
+
+                mediaRecorder.start();
+                micButton.classList.add('is-recording');
+                micSafetyTimeoutHandle = window.setTimeout(function () {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        stopRecording();
+                    }
+                }, MIC_MAX_RECORDING_MS);
+            }).catch(function () {
+                renderSystemNotice('Microphone access is blocked for this page.');
+            });
+        }
+
+        function stopRecording() {
+            if (micSafetyTimeoutHandle !== null) {
+                window.clearTimeout(micSafetyTimeoutHandle);
+                micSafetyTimeoutHandle = null;
+            }
+
+            if (micDelegated) {
+                if (!micRecording) {
+                    return;
+                }
+                micRecording = false;
+                micButton.disabled = true;
+                postToParent({ type: 'aitoolbox:mic-stop', version: 1 });
+                return;
+            }
+
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }
+
+        function releaseMicStream() {
+            if (micStream) {
+                micStream.getTracks().forEach(function (track) { track.stop(); });
+                micStream = null;
+            }
+            micButton.classList.remove('is-recording');
+        }
+
+        function onRecordingStopped() {
+            var chunks = recordedChunks;
+            var mimeType = mediaRecorder ? (mediaRecorder.mimeType || 'audio/webm') : 'audio/webm';
+            recordedChunks = [];
+            mediaRecorder = null;
+            releaseMicStream();
+
+            if (chunks.length === 0) {
+                return;
+            }
+
+            var blob = new Blob(chunks, { type: mimeType });
+            sendSpeechToText(blob);
+        }
+
+        // Broker (side panel) recorded the audio directly and is handing the raw bytes back down
+        // — same fetch as the local-capture path, just a different source for the Blob. Never a
+        // separate copy of the request logic.
+        function onMicAudio(data) {
+            micButton.classList.remove('is-recording');
+            if (!data || !data.arrayBuffer) {
+                micButton.disabled = bridgeState !== 'linked';
+                renderSystemNotice("Didn't catch that — try again.");
+                return;
+            }
+            var blob = new Blob([data.arrayBuffer], { type: data.mimeType || 'audio/webm' });
+            sendSpeechToText(blob);
+        }
+
+        function onMicError(data) {
+            micRecording = false;
+            micButton.classList.remove('is-recording');
+            micButton.disabled = bridgeState !== 'linked';
+            renderSystemNotice((data && data.message) || 'Voice input failed. Please try again.');
+        }
+
+        function sendSpeechToText(blob) {
+            micButton.disabled = true;
+            // The one client-side fact that answers "did it actually record anything" without
+            // needing the server log at all — check this in DevTools before anything else. A
+            // suspiciously tiny size (well under a KB for what should be a several-second clip)
+            // means the capture itself came up empty; a normal size means the bytes are fine and
+            // whatever's wrong is downstream (the network call or Azure's own recognition).
+            console.log('[embed-chat] sending speech-to-text request', { size: blob.size, type: blob.type });
+            fetch('/api/picsearch/speech-to-text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': blob.type || 'audio/webm',
+                    'X-P21-Session-Token': sessionToken || ''
+                },
+                body: blob
+            }).then(function (response) {
+                return response.json().catch(function () { return null; });
+            }).then(function (data) {
+                console.log('[embed-chat] speech-to-text response', data);
+                micButton.disabled = bridgeState !== 'linked';
+                if (!data || !data.success || !data.text) {
+                    renderSystemNotice((data && data.message) || "Didn't catch that — try again.");
+                    return;
+                }
+                var existing = composerInput.value || '';
+                composerInput.value = existing && !/\s$/.test(existing) ? existing + ' ' + data.text : existing + data.text;
+                composerInput.focus();
+            }).catch(function (error) {
+                console.error('[embed-chat] speech-to-text request failed', error);
+                micButton.disabled = bridgeState !== 'linked';
+                renderSystemNotice('Voice input failed. Please try again.');
             });
         }
 
@@ -404,6 +665,11 @@
                         break;
                     case 'conversationReset':
                         renderSystemNotice(message.message);
+                        break;
+                    case 'toolStep':
+                        latestToolStepLabel = message.description || message.name;
+                        latestToolStepAtMs = Date.now();
+                        updateThinkingCopy();
                         break;
                     case 'intent':
                         // The local closure function, not window.AIToolboxEmbed.sendIntent — that
@@ -658,6 +924,8 @@
 
         function showThinking() {
             thinkingStartedAtMs = Date.now();
+            latestToolStepLabel = null;
+            latestToolStepAtMs = null;
             thinkingElement = appendBubble('embed-message-thinking', 'Working&hellip;');
             if (visible) {
                 startThinkingTicker();
@@ -683,6 +951,12 @@
             if (!thinkingElement || thinkingStartedAtMs === null) {
                 return;
             }
+
+            if (latestToolStepLabel && latestToolStepAtMs !== null && Date.now() - latestToolStepAtMs < 5000) {
+                thinkingElement.innerHTML = escapeHtml(latestToolStepLabel) + '&hellip;';
+                return;
+            }
+
             var elapsedSeconds = Math.floor((Date.now() - thinkingStartedAtMs) / 1000);
             var copy = 'Working&hellip;';
             if (elapsedSeconds >= 15) {
@@ -762,6 +1036,10 @@
             composerInput.disabled = !enabled;
             composerButton.disabled = !enabled;
             resetButton.disabled = !enabled;
+            micButton.disabled = !enabled;
+            if (resumeBannerResetButton) {
+                resumeBannerResetButton.disabled = !enabled;
+            }
         }
 
         function showBanner(text) {
@@ -772,6 +1050,23 @@
         function hideBanner() {
             statusBanner.hidden = true;
             statusBanner.textContent = '';
+        }
+
+        function showResumeBanner(turnCount) {
+            if (!resumeBanner || !resumeBannerText) {
+                return;
+            }
+            var suffix = typeof turnCount === 'number' && turnCount > 0
+                ? ' (' + turnCount + (turnCount === 1 ? ' message' : ' messages') + ')'
+                : '';
+            resumeBannerText.textContent = 'Continuing a previous conversation' + suffix + '.';
+            resumeBanner.hidden = false;
+        }
+
+        function hideResumeBanner() {
+            if (resumeBanner) {
+                resumeBanner.hidden = true;
+            }
         }
 
         function requestResize(width) {
@@ -807,6 +1102,14 @@
         });
 
         resetButton.addEventListener('click', resetConversation);
+        if (resumeBannerResetButton) {
+            resumeBannerResetButton.addEventListener('click', resetConversation);
+        }
+
+        if (micSupported()) {
+            micButton.hidden = false;
+            micButton.addEventListener('click', toggleRecording);
+        }
 
         setComposerEnabled(false);
         renderContextChip();

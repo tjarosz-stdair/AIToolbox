@@ -55,7 +55,10 @@ public sealed class PicSearchChatService : IPicSearchChatService
         _logger = logger;
     }
 
-    public async Task<PicSearchTurnResult> SubmitTurnAsync(PicSearchTurnRequest request, CancellationToken cancellationToken = default)
+    public async Task<PicSearchTurnResult> SubmitTurnAsync(
+        PicSearchTurnRequest request,
+        Func<ToolStepEvent, CancellationToken, Task>? onToolStep = null,
+        CancellationToken cancellationToken = default)
     {
         var tokenResult = await _sessionTokens.ValidateAsync(request.SessionToken, cancellationToken);
 
@@ -142,11 +145,11 @@ public sealed class PicSearchChatService : IPicSearchChatService
         }
 
         var storedMessages = await _conversations.GetMessagesAsync(conversation.Id, cancellationToken);
-        var history = storedMessages.Select(DeserializeMessage).ToList();
+        var history = storedMessages.Select(ConversationMessageCodec.Deserialize).ToList();
         var nextSequence = storedMessages.Count == 0 ? 0 : storedMessages[^1].Sequence + 1;
 
         var userMessage = new ChatMessage(ChatRole.User, request.UserMessage);
-        await _conversations.AppendMessageAsync(SerializeMessage(conversation.Id, userMessage, nextSequence++, null, null), cancellationToken);
+        await _conversations.AppendMessageAsync(ConversationMessageCodec.Serialize(conversation.Id, userMessage, nextSequence++, null, null), cancellationToken);
 
         McpClient? mcpClient = null;
         ChatResponse response;
@@ -163,7 +166,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
             var tools = new List<AITool>(mcpTools.Cast<AITool>());
             tools.AddRange(uiTools);
 
-            var chatClient = _chatClientFactory.Create(provider);
+            var chatClient = _chatClientFactory.Create(provider, onToolStep);
             var chatOptions = new ChatOptions
             {
                 Instructions = BuildSystemPrompt(request.ContextKey, request.UiSurfaces, request.AutoNavigate),
@@ -198,7 +201,7 @@ public sealed class PicSearchChatService : IPicSearchChatService
         foreach (var message in response.Messages)
         {
             await _conversations.AppendMessageAsync(
-                SerializeMessage(conversation.Id, message, nextSequence++, response.ModelId, provider.Id),
+                ConversationMessageCodec.Serialize(conversation.Id, message, nextSequence++, response.ModelId, provider.Id),
                 cancellationToken);
         }
 
@@ -266,6 +269,50 @@ public sealed class PicSearchChatService : IPicSearchChatService
         }
 
         return new PicSearchResetResult(true, null, null);
+    }
+
+    /// <summary>
+    /// Lets the client learn, on load, whether there's already an Active conversation for this
+    /// sub+surface+contextKey (SubmitTurnAsync already silently resumes one server-side — this is
+    /// what finally lets the browser reflect that instead of always starting from a blank
+    /// transcript). Reduces each stored message down to just its displayable text; a message that
+    /// carried only tool-call/tool-result content (no TextContent) is dropped rather than
+    /// returned as an empty turn — the live chat UI never rendered those directly anyway, only the
+    /// admin transcript view does.
+    /// </summary>
+    public async Task<PicSearchHistoryResult> GetActiveConversationHistoryAsync(string? sessionToken, string contextKey, CancellationToken cancellationToken = default)
+    {
+        var tokenResult = await _sessionTokens.ValidateAsync(sessionToken, cancellationToken);
+
+        if (!tokenResult.Present)
+        {
+            return new PicSearchHistoryResult(false, PicSearchErrorCode.SessionTokenRequired, "A valid P21 Toolbox session token is required to use this chat.", null, []);
+        }
+
+        if (!tokenResult.IsValid)
+        {
+            _logger.LogWarning("Rejected picsearch history request: session token present but invalid ({Reason}).", tokenResult.RejectReason);
+            return new PicSearchHistoryResult(false, PicSearchErrorCode.SessionTokenRejected, $"Session token rejected ({tokenResult.RejectReason}).", null, []);
+        }
+
+        var conversation = await _conversations.GetActiveConversationAsync(tokenResult.Sub!, Surface, contextKey, cancellationToken);
+        if (conversation is null)
+        {
+            return new PicSearchHistoryResult(true, null, null, null, []);
+        }
+
+        var storedMessages = await _conversations.GetMessagesAsync(conversation.Id, cancellationToken);
+        var turns = new List<PicSearchHistoryTurn>();
+        foreach (var stored in storedMessages)
+        {
+            var text = ConversationMessageCodec.Deserialize(stored).Text;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                turns.Add(new PicSearchHistoryTurn(stored.Role, text));
+            }
+        }
+
+        return new PicSearchHistoryResult(true, null, null, conversation, turns);
     }
 
     /// <summary>
@@ -438,25 +485,6 @@ public sealed class PicSearchChatService : IPicSearchChatService
             {surfaceLine}
             {navigationLine}
             """;
-    }
-
-    private static ConversationMessage SerializeMessage(int conversationId, ChatMessage message, int sequence, string? modelId, int? aiProviderId)
-    {
-        return new ConversationMessage
-        {
-            ConversationId = conversationId,
-            Role = message.Role.Value,
-            Sequence = sequence,
-            ContentJson = JsonSerializer.Serialize(message.Contents, AIJsonUtilities.DefaultOptions),
-            ModelId = modelId,
-            AiProviderId = aiProviderId
-        };
-    }
-
-    private static ChatMessage DeserializeMessage(ConversationMessage stored)
-    {
-        var contents = JsonSerializer.Deserialize<List<AIContent>>(stored.ContentJson, AIJsonUtilities.DefaultOptions) ?? [];
-        return new ChatMessage(new ChatRole(stored.Role), contents);
     }
 
     private static PicSearchTurnResult Failure(

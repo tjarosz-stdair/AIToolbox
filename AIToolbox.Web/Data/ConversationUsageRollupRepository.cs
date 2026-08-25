@@ -1,3 +1,4 @@
+using AIToolbox.Web.Models;
 using Microsoft.Data.SqlClient;
 
 namespace AIToolbox.Web.Data;
@@ -52,6 +53,61 @@ public sealed class ConversationUsageRollupRepository : IConversationUsageRollup
             await TryUpdateAsync(connection, date, surface, conversationDelta, turnDelta, tokensInDelta,
                 tokensOutDelta, estimatedCostUsdDelta, degradedTierDelta, budgetExhaustedDelta, failureDelta, cancellationToken);
         }
+    }
+
+    public async Task<IReadOnlyList<ConversationUsageRollup>> GetAsync(
+        DateOnly fromDate,
+        DateOnly toDate,
+        string surface,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedSurface = string.IsNullOrWhiteSpace(surface) ? "all" : surface.Trim();
+        var surfaceClause = string.Equals(normalizedSurface, "all", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : "AND Surface = @Surface";
+
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT [Date], Surface, ConversationCount, TurnCount, TokensIn, TokensOut,
+                   EstimatedCostUsd, DegradedTierCount, BudgetExhaustedCount, FailureCount
+            FROM dbo.ConversationUsageRollup
+            WHERE [Date] BETWEEN @FromDate AND @ToDate
+                {surfaceClause}
+            ORDER BY [Date] ASC, Surface ASC;
+            """;
+        command.Parameters.AddWithValue("@FromDate", fromDate);
+        command.Parameters.AddWithValue("@ToDate", toDate);
+        if (!string.Equals(normalizedSurface, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            command.Parameters.AddWithValue("@Surface", normalizedSurface);
+        }
+
+        var rows = new List<ConversationUsageRollup>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(MapRollup(reader));
+        }
+
+        return rows;
+    }
+
+    private static ConversationUsageRollup MapRollup(SqlDataReader reader)
+    {
+        return new ConversationUsageRollup
+        {
+            Date = DateOnly.FromDateTime((DateTime)reader["Date"]),
+            Surface = (string)reader["Surface"],
+            ConversationCount = (int)reader["ConversationCount"],
+            TurnCount = (int)reader["TurnCount"],
+            TokensIn = (int)reader["TokensIn"],
+            TokensOut = (int)reader["TokensOut"],
+            EstimatedCostUsd = (decimal)reader["EstimatedCostUsd"],
+            DegradedTierCount = (int)reader["DegradedTierCount"],
+            BudgetExhaustedCount = (int)reader["BudgetExhaustedCount"],
+            FailureCount = (int)reader["FailureCount"]
+        };
     }
 
     private static async Task<bool> TryUpdateAsync(

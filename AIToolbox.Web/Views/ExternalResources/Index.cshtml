@@ -1,0 +1,63 @@
+@model IReadOnlyList<ExternalResource>
+
+@{
+    ViewData["Title"] = "External Resources";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>External Resources</h1>
+        <p class="text-muted mb-0">Azure Speech-to-Text and other bolt-on services — distinct from AI providers and MCP client credentials.</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="Create" class="btn btn-primary">Add resource</a>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<div class="table-surface">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @if (Model.Count == 0)
+        {
+            <tr>
+                <td colspan="5" class="text-muted">No external resources configured yet.</td>
+            </tr>
+        }
+        @foreach (var resource in Model)
+        {
+            <tr>
+                <td>@resource.DisplayName</td>
+                <td>@resource.ResourceType</td>
+                <td>
+                    @if (resource.IsEnabled)
+                    {
+                        <span class="badge text-bg-success">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Disabled</span>
+                    }
+                </td>
+                <td>@resource.UpdatedUtc.ToLocalTime().ToString("g")</td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@resource.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

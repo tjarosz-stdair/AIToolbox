@@ -1,0 +1,160 @@
+@using AIToolbox.Web.Models
+@model ConversationDetailViewModel
+@inject AIToolbox.Web.Services.IMarkdownRenderer Markdown
+
+@{
+    ViewData["Title"] = "Conversation";
+    var conversation = Model.Conversation;
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Conversation #@conversation.Id</h1>
+        <p class="text-muted mb-0">@conversation.Surface &middot; @conversation.ContextKey</p>
+    </div>
+    <div class="page-actions">
+        <a asp-action="Index" asp-route-tab="ai-chat" class="btn btn-outline-secondary">Back to Event Logs</a>
+    </div>
+</div>
+
+<section class="tool-surface mb-3">
+    <div class="section-heading">
+        <h2>Summary</h2>
+        @if (conversation.Status == ConversationStatus.Active)
+        {
+            <span class="job-chip status succeeded">Active</span>
+        }
+        else
+        {
+            <span class="job-chip private">Closed</span>
+        }
+    </div>
+
+    <dl class="row mb-0">
+        <dt class="col-sm-3">Sub</dt>
+        <dd class="col-sm-9 event-log-long">@conversation.Sub</dd>
+
+        <dt class="col-sm-3">Context key</dt>
+        <dd class="col-sm-9 event-log-long">@conversation.ContextKey</dd>
+
+        <dt class="col-sm-3">Status</dt>
+        <dd class="col-sm-9">@FormatStatusLabel(conversation.Status)</dd>
+
+        <dt class="col-sm-3">Turns</dt>
+        <dd class="col-sm-9">@conversation.UserTurnCount.ToString("N0")</dd>
+
+        <dt class="col-sm-3">Tokens in / out</dt>
+        <dd class="col-sm-9">@conversation.TokensIn.ToString("N0") / @conversation.TokensOut.ToString("N0")</dd>
+
+        <dt class="col-sm-3">Created</dt>
+        <dd class="col-sm-9">
+            @conversation.CreatedUtc.ToLocalTime().ToString("g")
+            <span class="text-muted small">(@conversation.CreatedUtc.ToString("u"))</span>
+        </dd>
+
+        <dt class="col-sm-3">Last active</dt>
+        <dd class="col-sm-9">
+            @conversation.LastActiveUtc.ToLocalTime().ToString("g")
+            <span class="text-muted small">(@conversation.LastActiveUtc.ToString("u"))</span>
+        </dd>
+
+        <dt class="col-sm-3">Closed</dt>
+        <dd class="col-sm-9">
+            @if (conversation.ClosedUtc is DateTime closedUtc)
+            {
+                @closedUtc.ToLocalTime().ToString("g")
+                <span class="text-muted small">(@closedUtc.ToString("u"))</span>
+            }
+            else
+            {
+                <span class="text-muted">&mdash;</span>
+            }
+        </dd>
+    </dl>
+
+    <p class="text-muted small mb-0 mt-3">Closed conversations are permanently deleted @Model.RetentionDays days after they close. Active conversations are never purged.</p>
+</section>
+
+<section class="tool-surface">
+    <div class="section-heading">
+        <h2>Transcript</h2>
+        <span class="text-muted small">@Model.Transcript.Count messages</span>
+    </div>
+
+    @if (Model.Transcript.Count == 0)
+    {
+        <p class="text-muted mb-0">No messages recorded for this conversation.</p>
+    }
+    else
+    {
+        <div class="conversation-transcript">
+        @foreach (var (message, contents) in Model.Transcript)
+        {
+            <div class="transcript-message transcript-role-@message.Role.ToLowerInvariant()">
+                <div class="transcript-message-header">
+                    <span class="job-chip @(message.Role.Equals("user", StringComparison.OrdinalIgnoreCase) ? "public" : "private")">@message.Role</span>
+                    <span class="text-muted small">Seq @message.Sequence &middot; @message.CreatedUtc.ToLocalTime().ToString("g")</span>
+                    @if (!string.IsNullOrWhiteSpace(message.ModelId))
+                    {
+                        <span class="text-muted small">@message.ModelId</span>
+                    }
+                </div>
+                <div class="transcript-message-body">
+                @foreach (var content in contents)
+                {
+                    switch (content)
+                    {
+                        case ConversationContentDisplay.Text text when message.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase):
+                            <div class="transcript-bubble transcript-markdown">@Markdown.Render(text.Value)</div>
+                            break;
+                        case ConversationContentDisplay.Text text:
+                            <div class="transcript-bubble">@text.Value</div>
+                            break;
+                        case ConversationContentDisplay.ToolCall toolCall:
+                            <div class="transcript-tool-chip">
+                                <span class="job-chip status succeeded">Tool call: @toolCall.Name</span>
+                                <details>
+                                    <summary class="text-muted small">Arguments</summary>
+                                    <pre class="transcript-json">@toolCall.ArgumentsJson</pre>
+                                </details>
+                            </div>
+                            break;
+                        case ConversationContentDisplay.ToolResult toolResult:
+                            <div class="transcript-tool-chip">
+                                <span class="job-chip status @(toolResult.IsError ? "failed" : "succeeded")">Tool result@(toolResult.IsError ? " (error)" : "")</span>
+                                <details>
+                                    <summary class="text-muted small">Result</summary>
+                                    <pre class="transcript-json">@toolResult.ResultJson</pre>
+                                </details>
+                            </div>
+                            break;
+                        case ConversationContentDisplay.Raw raw:
+                            <div class="transcript-raw">
+                                <span class="text-muted small">@raw.TypeName</span>
+                                <pre class="transcript-json">@raw.Json</pre>
+                            </div>
+                            break;
+                    }
+                }
+                </div>
+            </div>
+        }
+        </div>
+    }
+</section>
+
+@functions {
+    private static string FormatStatusLabel(ConversationStatus status)
+    {
+        return status switch
+        {
+            ConversationStatus.Active => "Active",
+            ConversationStatus.ClosedManual => "Closed (manual)",
+            ConversationStatus.ClosedContextChange => "Closed (context changed)",
+            ConversationStatus.ClosedTurnCap => "Closed (turn cap)",
+            ConversationStatus.ClosedTokenCap => "Closed (token cap)",
+            ConversationStatus.ClosedInactivity => "Closed (inactivity)",
+            _ => status.ToString()
+        };
+    }
+}

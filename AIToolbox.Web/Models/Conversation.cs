@@ -34,3 +34,39 @@ public sealed class Conversation
 
     public bool RolledUp { get; set; }
 }
+
+public sealed class ConversationListFilter
+{
+    public string Surface { get; set; } = "all";
+
+    public string Status { get; set; } = "all";
+
+    /// <summary>Free-text, partial match — an admin's starting point is usually a partial
+    /// order/customer number from a support conversation, not an exact match.</summary>
+    public string? ContextKey { get; set; }
+
+    public int Page { get; set; } = 1;
+
+    public int PageSize { get; set; } = 50;
+}
+
+public sealed class ConversationListResult
+{
+    public IReadOnlyList<Conversation> Items { get; set; } = [];
+
+    public int TotalCount { get; set; }
+
+    public int Page { get; set; } = 1;
+
+    public int PageSize { get; set; } = 50;
+
+    public string Surface { get; set; } = "all";
+
+    public string Status { get; set; } = "all";
+
+    public string? ContextKey { get; set; }
+
+    public IReadOnlyList<string> Surfaces { get; set; } = [];
+
+    public int TotalPages => TotalCount == 0 ? 1 : (int)Math.Ceiling(TotalCount / (double)PageSize);
+}

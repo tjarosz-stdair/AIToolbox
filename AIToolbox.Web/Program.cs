@@ -53,6 +53,12 @@ builder.Services.AddHttpClient("AiProviders", client =>
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
 
+builder.Services.AddHttpClient("AzureSpeech", client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AIToolbox/1.0");
+    client.Timeout = TimeSpan.FromSeconds(35);
+});
+
 builder.Services.AddHttpClient("McpClient", client =>
 {
     client.DefaultRequestHeaders.UserAgent.ParseAdd("AIToolbox/1.0");
@@ -62,6 +68,7 @@ builder.Services.AddHttpClient("McpClient", client =>
 builder.Services.AddScoped<SqlConnectionFactory>();
 builder.Services.AddScoped<DatabaseInitializer>();
 builder.Services.AddScoped<IAiProviderRepository, AiProviderRepository>();
+builder.Services.AddScoped<IExternalResourceRepository, ExternalResourceRepository>();
 builder.Services.AddScoped<IAuthorizedUserRepository, AuthorizedUserRepository>();
 builder.Services.AddScoped<IEventLogRepository, EventLogRepository>();
 builder.Services.AddScoped<IPromptRunRepository, PromptRunRepository>();
@@ -86,6 +93,7 @@ builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
 builder.Services.AddScoped<IAccessControlService, AccessControlService>();
 builder.Services.AddScoped<IExternalUserClaimsEnricher, ExternalUserClaimsEnricher>();
 builder.Services.AddScoped<IAiProviderClient, AiProviderClient>();
+builder.Services.AddScoped<ISpeechTranscriptionService, SpeechTranscriptionService>();
 builder.Services.AddScoped<IPromptOrchestrator, PromptOrchestrator>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 builder.Services.AddScoped<IProductParsingService, ProductParsingService>();
@@ -310,6 +318,18 @@ builder.Services.AddRateLimiter(options =>
             {
                 Window = TimeSpan.FromMinutes(1),
                 PermitLimit = 10,
+                QueueLimit = 0
+            }));
+
+    // A bit more permissive than picsearch-chat's 10/min — starting/stopping a recording a few
+    // times while composing one question is normal use, not abuse.
+    options.AddPolicy(PicSearchChatController.SpeechRateLimiterPolicyName, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 20,
                 QueueLimit = 0
             }));
 });

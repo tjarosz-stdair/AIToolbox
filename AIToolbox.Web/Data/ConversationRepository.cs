@@ -67,6 +67,90 @@ public sealed class ConversationRepository : IConversationRepository
         return await reader.ReadAsync(cancellationToken) ? MapConversation(reader) : null;
     }
 
+    public async Task<ConversationListResult> GetConversationsAsync(
+        ConversationListFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        var surface = NormalizeSurface(filter.Surface);
+        var status = NormalizeStatus(filter.Status);
+        var contextKey = string.IsNullOrWhiteSpace(filter.ContextKey) ? null : filter.ContextKey.Trim();
+        var page = Math.Max(filter.Page, 1);
+        var pageSize = Math.Clamp(filter.PageSize, 10, 200);
+        var offset = (page - 1) * pageSize;
+
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(1)
+            FROM dbo.Conversations
+            WHERE 1 = 1
+                {BuildSurfaceWhereClause(surface)}
+                {BuildStatusWhereClause(status)}
+                {BuildContextKeyWhereClause(contextKey)};
+
+            SELECT DISTINCT Surface
+            FROM dbo.Conversations
+            ORDER BY Surface;
+
+            SELECT Id, Sub, Surface, ContextKey, Status, UserTurnCount, TokensIn, TokensOut,
+                   CreatedUtc, LastActiveUtc, ClosedUtc, RolledUp
+            FROM dbo.Conversations
+            WHERE 1 = 1
+                {BuildSurfaceWhereClause(surface)}
+                {BuildStatusWhereClause(status)}
+                {BuildContextKeyWhereClause(contextKey)}
+            ORDER BY LastActiveUtc DESC, Id DESC
+            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+            """;
+        command.Parameters.AddWithValue("@Offset", offset);
+        command.Parameters.AddWithValue("@PageSize", pageSize);
+        if (!string.Equals(surface, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            command.Parameters.AddWithValue("@Surface", surface);
+        }
+        if (!string.Equals(status, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            command.Parameters.AddWithValue("@Status", status);
+        }
+        if (contextKey is not null)
+        {
+            command.Parameters.AddWithValue("@ContextKey", $"%{contextKey}%");
+        }
+
+        var items = new List<Conversation>();
+        var surfaces = new List<string>();
+        var totalCount = 0;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            totalCount = reader.GetInt32(0);
+        }
+
+        await reader.NextResultAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            surfaces.Add(reader.GetRequiredString("Surface"));
+        }
+
+        await reader.NextResultAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(MapConversation(reader));
+        }
+
+        return new ConversationListResult
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            Surface = surface,
+            Status = status,
+            ContextKey = contextKey,
+            Surfaces = surfaces
+        };
+    }
+
     public async Task<int> CreateConversationAsync(Conversation conversation, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -184,6 +268,38 @@ public sealed class ConversationRepository : IConversationRepository
             """;
         command.Parameters.AddWithValue("@Id", conversationId);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string NormalizeSurface(string? surface)
+    {
+        return string.IsNullOrWhiteSpace(surface) ? "all" : surface.Trim();
+    }
+
+    private static string NormalizeStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status) || string.Equals(status, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            return "all";
+        }
+
+        // Status is stored as the enum's own .ToString() (e.g. 'ClosedManual') -- validate against
+        // the real enum here rather than trusting the query string directly into SQL.
+        return Enum.TryParse<ConversationStatus>(status, ignoreCase: true, out var parsed) ? parsed.ToString() : "all";
+    }
+
+    private static string BuildSurfaceWhereClause(string surface)
+    {
+        return string.Equals(surface, "all", StringComparison.OrdinalIgnoreCase) ? string.Empty : "AND Surface = @Surface";
+    }
+
+    private static string BuildStatusWhereClause(string status)
+    {
+        return string.Equals(status, "all", StringComparison.OrdinalIgnoreCase) ? string.Empty : "AND Status = @Status";
+    }
+
+    private static string BuildContextKeyWhereClause(string? contextKey)
+    {
+        return contextKey is null ? string.Empty : "AND ContextKey LIKE @ContextKey";
     }
 
     private static Conversation MapConversation(SqlDataReader reader)

@@ -1,0 +1,84 @@
+@model ExternalResourceFormViewModel
+
+<div class="alert alert-info">
+    <strong>Set this up in the Azure Portal first:</strong>
+    <ol class="mb-0">
+        <li>Azure Portal &rarr; Create a resource &rarr; search <strong>"Speech"</strong> &rarr; create it (Free F0 tier is fine for light use).</li>
+        <li>Note the <strong>Region</strong> you picked when creating it.</li>
+        <li>Once deployed &rarr; <strong>Keys and Endpoint</strong> &rarr; copy <strong>KEY 1</strong>.</li>
+        <li>Paste the region and key below and Save.</li>
+    </ol>
+</div>
+
+<form method="post" class="tool-surface">
+    @Html.AntiForgeryToken()
+    <input asp-for="Id" type="hidden" />
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="form-grid">
+        <div class="mb-3">
+            <label asp-for="ResourceType" class="form-label"></label>
+            <select asp-for="ResourceType" asp-items="Html.GetEnumSelectList<ExternalResourceType>()" class="form-select"></select>
+            <span asp-validation-for="ResourceType" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="DisplayName" class="form-label"></label>
+            <input asp-for="DisplayName" class="form-control" />
+            <span asp-validation-for="DisplayName" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Region" class="form-label"></label>
+            <input asp-for="Region" class="form-control" placeholder="eastus" />
+            <span asp-validation-for="Region" class="text-danger"></span>
+            <div class="form-text">The region you chose when creating the Speech resource in Azure.</div>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Language" class="form-label"></label>
+            <select asp-for="Language" class="form-select">
+                <option value="en-US">English (United States)</option>
+                <option value="en-GB">English (United Kingdom)</option>
+                <option value="es-ES">Spanish (Spain)</option>
+                <option value="es-MX">Spanish (Mexico)</option>
+                <option value="fr-FR">French (France)</option>
+                <option value="de-DE">German (Germany)</option>
+                @if (!new[] { "en-US", "en-GB", "es-ES", "es-MX", "fr-FR", "de-DE" }.Contains(Model.Language))
+                {
+                    <option value="@Model.Language" selected>@Model.Language</option>
+                }
+            </select>
+            <span asp-validation-for="Language" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3 wide">
+            <label asp-for="SubscriptionKey" class="form-label"></label>
+            <input asp-for="SubscriptionKey" class="form-control" autocomplete="off" />
+            <span asp-validation-for="SubscriptionKey" class="text-danger"></span>
+            @if (Model.HasStoredSecret)
+            {
+                <div class="form-text">A key is currently stored.</div>
+            }
+        </div>
+    </div>
+
+    <div class="switch-row">
+        <div class="form-check form-switch">
+            <input asp-for="IsEnabled" class="form-check-input" />
+            <label asp-for="IsEnabled" class="form-check-label"></label>
+        </div>
+        @if (Model.Id > 0)
+        {
+            <div class="form-check form-switch">
+                <input asp-for="ClearSecret" class="form-check-input" />
+                <label asp-for="ClearSecret" class="form-check-label"></label>
+            </div>
+        }
+    </div>
+
+    <div class="form-actions">
+        <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+        <button type="submit" class="btn btn-primary">Save resource</button>
+    </div>
+</form>

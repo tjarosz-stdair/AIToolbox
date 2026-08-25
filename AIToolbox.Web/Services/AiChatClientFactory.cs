@@ -23,7 +23,7 @@ public sealed class AiChatClientFactory : IAiChatClientFactory
     private const string UiIntentNamePrefix = "ui_";
     private const int MaxUiIntentsPerTurn = 2;
 
-    public IChatClient Create(AiProvider provider)
+    public IChatClient Create(AiProvider provider, Func<ToolStepEvent, CancellationToken, Task>? onToolStep = null)
     {
         var baseClient = new AiChatClient(
             provider,
@@ -65,9 +65,40 @@ public sealed class AiChatClientFactory : IAiChatClientFactory
                         };
                     }
 
+                    if (onToolStep is not null)
+                    {
+                        await onToolStep(
+                            new ToolStepEvent(context.Function.Name, SummarizeDescription(context.Function.Name, context.Function.Description)),
+                            cancellationToken);
+                    }
+
                     return await context.Function.InvokeAsync(context.Arguments, cancellationToken);
                 };
             })
             .Build();
+    }
+
+    // A tool's Description is written for the model, not the end user (e.g. "Shows a part on
+    // screen. Returns no product data — use get_product_specs for that.") — the first sentence
+    // alone reads fine as a live status line, so this trims to that rather than showing the whole
+    // thing. Falls back to a humanized function name for the rare tool with no description at all.
+    private static string SummarizeDescription(string functionName, string? description)
+    {
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            var sentenceEnd = description.IndexOfAny(['.', '!', '?']);
+            var sentence = sentenceEnd > 0 ? description[..sentenceEnd] : description;
+            sentence = sentence.Trim();
+            if (sentence.Length > 80)
+            {
+                sentence = sentence[..80].TrimEnd() + "…";
+            }
+            if (sentence.Length > 0)
+            {
+                return sentence;
+            }
+        }
+
+        return functionName.Replace(UiIntentNamePrefix, "", StringComparison.Ordinal).Replace('_', ' ');
     }
 }

@@ -1305,6 +1305,123 @@ body {
   cursor: pointer;
 }
 
+.conversation-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.transcript-message {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.transcript-role-user {
+  background: var(--surface-alt);
+}
+
+.transcript-role-assistant {
+  background: #fff;
+}
+
+.transcript-role-tool {
+  background: #f7f5ff;
+}
+
+.transcript-message-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.transcript-message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transcript-bubble {
+  white-space: pre-wrap;
+}
+
+/* Assistant text is server-rendered Markdown (Markdig, HTML disabled) — style the semantic
+   tags it emits and drop the plain-text pre-wrap so paragraph/list spacing isn't doubled. */
+.transcript-bubble.transcript-markdown {
+  white-space: normal;
+}
+
+.transcript-markdown p {
+  margin: 0 0 0.5rem;
+}
+
+.transcript-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.transcript-markdown ul,
+.transcript-markdown ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.transcript-markdown code {
+  background: var(--surface-alt);
+  border-radius: 0.2rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85em;
+}
+
+.transcript-markdown pre {
+  background: var(--surface-alt);
+  border-radius: 0.35rem;
+  padding: 0.5rem;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.transcript-markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.transcript-markdown table {
+  border-collapse: collapse;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+
+.transcript-markdown th,
+.transcript-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+}
+
+.transcript-markdown a {
+  color: #0d6efd;
+}
+
+.transcript-tool-chip,
+.transcript-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transcript-json {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  margin: 4px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+
 .job-status-toggle:focus {
   box-shadow: 0 0 0 0.1rem #fff, 0 0 0 0.22rem rgba(36, 107, 254, 0.28);
   outline: 0;

@@ -1,0 +1,23 @@
+@model ExternalResourceFormViewModel
+
+@{
+    ViewData["Title"] = "Edit External Resource";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Edit External Resource</h1>
+        <p class="text-muted mb-0">Leave the subscription key blank to keep the stored credential.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<partial name="_Form" model="Model" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
