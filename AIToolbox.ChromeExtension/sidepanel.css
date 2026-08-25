@@ -17,41 +17,24 @@ body {
   margin: 0;
 }
 
-header {
-  align-items: center;
-  border-bottom: 1px solid var(--panel-border);
-  display: flex;
-  gap: 10px;
-  padding: 14px 16px;
-}
-
-.title-icon {
-  display: block;
-  height: 24px;
-  width: 24px;
-}
-
-h1 {
-  font-size: 16px;
-  margin: 0;
-}
-
 main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   min-height: 0;
-  padding: 16px;
+  padding: 8px;
 }
 
 .window-card {
   background: var(--panel-bg-alt);
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  display: grid;
+  border-radius: 6px;
+  display: flex;
+  align-items: baseline;
   gap: 6px;
-  padding: 12px 14px;
+  padding: 6px 10px;
+  font-size: 13px;
 }
 
 .eyebrow {
@@ -60,6 +43,7 @@ main {
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  flex: 0 0 auto;
 }
 
 #windowTitle {

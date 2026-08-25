@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Toolbox — Microphone Access</title>
+  <style>
+    body {
+      background: #1c2733;
+      color: #eef2f6;
+      font: 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 32px;
+      max-width: 480px;
+    }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    p { line-height: 1.5; color: #97a6b8; }
+    button {
+      margin-top: 16px;
+      padding: 8px 16px;
+      border: 1px solid #34455a;
+      border-radius: 6px;
+      background: #253242;
+      color: #eef2f6;
+      font-size: 14px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>AI Toolbox — Microphone Access</h1>
+  <p id="status">Requesting microphone access…</p>
+  <button id="closeButton" type="button" hidden>Close this tab</button>
+  <script type="module" src="dist/mic-permission.js"></script>
+</body>
+</html>

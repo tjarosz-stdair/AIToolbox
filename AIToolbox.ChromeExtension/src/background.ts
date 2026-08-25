@@ -24,17 +24,47 @@ type AuthTokenCache = AuthTokenResult & {
 // Keyed by "tabId:frameId" because PIC Search, when opened from Order Entry, registers from a
 // SUB-frame of the P21Web tab (#vbrIFrame), not the tab's main frame -- tabId alone would collide
 // if a future surface ever registered from that tab's main frame too.
+//
+// Backed entirely by chrome.storage.session, NEVER an in-memory-only Map: MV3 service workers are
+// killed after ~30s of inactivity and respawn with a fresh module scope, so an in-memory Map would
+// silently forget every registered surface the first time nothing happened in PIC Search for half
+// a minute -- exactly the "chat falls back to idle even though PIC Search is still open" bug this
+// was built to fix.
+//
+// PIC Search's adapter now sends aitoolbox:context every 20s as a heartbeat (same message shape
+// used for real context changes -- no new protocol surface, see the directive this shipped with),
+// not just on DOM mutations. lastSeenAtMs tracks the most recent of either. STALE_AFTER_MS is 3x
+// the heartbeat interval -- generous margin for one missed beat (a slow tab, a delayed SW wake) --
+// past which a surface is treated as gone even if PIC Search's own beforeunload cleanup message
+// never arrived (a hard tab discard can skip it). This is what lets findPicsearchSurfaceForTab
+// tell "still genuinely open" apart from "was open a while ago," instead of trusting a push-once
+// registration forever.
+const HEARTBEAT_INTERVAL_MS = 20000;
+const STALE_AFTER_MS = HEARTBEAT_INTERVAL_MS * 3;
+
 interface PicsearchSurfaceState {
   surface: string;
   contextKey: string | null;
   pageContext: unknown;
   registeredAtMs: number;
+  lastSeenAtMs: number;
 }
 
-const picsearchSurfaces = new Map<string, PicsearchSurfaceState>();
+type PicsearchSurfaceStore = Record<string, PicsearchSurfaceState>;
+
+const picsearchSurfacesKey = "picsearchSurfaces";
 
 function surfaceKey(tabId: number, frameId: number): string {
   return `${tabId}:${frameId}`;
+}
+
+async function getStoredSurfaces(): Promise<PicsearchSurfaceStore> {
+  const stored = await chrome.storage.session.get(picsearchSurfacesKey);
+  return (stored[picsearchSurfacesKey] as PicsearchSurfaceStore | undefined) || {};
+}
+
+async function setStoredSurfaces(surfaces: PicsearchSurfaceStore): Promise<void> {
+  await chrome.storage.session.set({ [picsearchSurfacesKey]: surfaces });
 }
 
 function broadcastPicsearchEvent(payload: Record<string, unknown>): void {
@@ -170,13 +200,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "picsearchSurfaceEvent" && sender.tab?.id !== undefined && sender.frameId !== undefined) {
-    handlePicsearchSurfaceEvent(sender.tab.id, sender.frameId, message.event);
+    void handlePicsearchSurfaceEvent(sender.tab.id, sender.frameId, message.event);
     return false;
   }
 
   if (message?.type === "getPicsearchSurface" && typeof message.tabId === "number") {
-    sendResponse(findPicsearchSurfaceForTab(message.tabId));
-    return false;
+    findPicsearchSurfaceForTab(message.tabId).then(sendResponse);
+    return true;
   }
 
   if (message?.type === "mintSessionToken" && typeof message.tabId === "number" && typeof message.frameId === "number") {
@@ -192,10 +222,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message?.type === "openMicPermissionTab") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("mic-permission.html") })
+      .then(() => sendResponse({ ok: true }))
+      .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   return false;
 });
 
-function handlePicsearchSurfaceEvent(tabId: number, frameId: number, event: Record<string, unknown> | undefined): void {
+async function handlePicsearchSurfaceEvent(tabId: number, frameId: number, event: Record<string, unknown> | undefined): Promise<void> {
   if (!event || typeof event.type !== "string") {
     return;
   }
@@ -203,14 +240,18 @@ function handlePicsearchSurfaceEvent(tabId: number, frameId: number, event: Reco
   const key = surfaceKey(tabId, frameId);
 
   if (event.type === "aitoolbox:surface-register" || event.type === "aitoolbox:context") {
-    const existing = picsearchSurfaces.get(key);
+    const surfaces = await getStoredSurfaces();
+    const existing = surfaces[key];
+    const now = Date.now();
     const state: PicsearchSurfaceState = {
       surface: typeof event.surface === "string" ? event.surface : (existing?.surface ?? "picsearch"),
       contextKey: typeof event.contextKey === "string" ? event.contextKey : (existing?.contextKey ?? null),
       pageContext: event.pageContext ?? existing?.pageContext ?? null,
-      registeredAtMs: existing?.registeredAtMs ?? Date.now()
+      registeredAtMs: existing?.registeredAtMs ?? now,
+      lastSeenAtMs: now
     };
-    picsearchSurfaces.set(key, state);
+    surfaces[key] = state;
+    await setStoredSurfaces(surfaces);
     broadcastPicsearchEvent({ type: "picsearchContextUpdate", tabId, frameId, ...state });
     return;
   }
@@ -221,31 +262,62 @@ function handlePicsearchSurfaceEvent(tabId: number, frameId: number, event: Reco
   }
 
   if (event.type === "aitoolbox:surface-unregister") {
-    picsearchSurfaces.delete(key);
+    const surfaces = await getStoredSurfaces();
+    if (key in surfaces) {
+      delete surfaces[key];
+      await setStoredSurfaces(surfaces);
+    }
     broadcastPicsearchEvent({ type: "picsearchSurfaceGone", tabId, frameId });
   }
 }
 
-function findPicsearchSurfaceForTab(tabId: number): (PicsearchSurfaceState & { tabId: number; frameId: number }) | null {
-  for (const [key, state] of picsearchSurfaces) {
+async function findPicsearchSurfaceForTab(tabId: number): Promise<(PicsearchSurfaceState & { tabId: number; frameId: number }) | null> {
+  const surfaces = await getStoredSurfaces();
+  let pruned = false;
+
+  for (const [key, state] of Object.entries(surfaces)) {
     const [keyTabId, keyFrameId] = key.split(":").map(Number);
-    if (keyTabId === tabId) {
-      return { ...state, tabId, frameId: keyFrameId };
+    if (keyTabId !== tabId) {
+      continue;
     }
+
+    if (Date.now() - state.lastSeenAtMs > STALE_AFTER_MS) {
+      // No heartbeat in 3 intervals -- PIC Search's frame disappeared without its
+      // beforeunload/surface-unregister message ever arriving (a hard tab discard can skip it).
+      // Treat it as gone rather than trusting a push-once registration forever.
+      delete surfaces[key];
+      pruned = true;
+      continue;
+    }
+
+    if (pruned) {
+      await setStoredSurfaces(surfaces);
+    }
+    return { ...state, tabId, frameId: keyFrameId };
+  }
+
+  if (pruned) {
+    await setStoredSurfaces(surfaces);
   }
   return null;
 }
 
-function clearPicsearchSurfacesForTab(tabId: number): void {
-  for (const key of Array.from(picsearchSurfaces.keys())) {
+async function clearPicsearchSurfacesForTab(tabId: number): Promise<void> {
+  const surfaces = await getStoredSurfaces();
+  let changed = false;
+  for (const key of Object.keys(surfaces)) {
     if (key.startsWith(`${tabId}:`)) {
-      picsearchSurfaces.delete(key);
+      delete surfaces[key];
+      changed = true;
     }
+  }
+  if (changed) {
+    await setStoredSurfaces(surfaces);
   }
 }
 
 chrome.tabs.onRemoved.addListener(tabId => {
-  clearPicsearchSurfacesForTab(tabId);
+  void clearPicsearchSurfacesForTab(tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {

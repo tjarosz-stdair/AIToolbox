@@ -7,17 +7,13 @@
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
-  <header>
-    <img class="title-icon" src="icons/icon-32.png" alt="" aria-hidden="true">
-    <h1>AI Toolbox</h1>
-  </header>
   <main>
     <section class="window-card">
-      <span class="eyebrow">Active P21 window</span>
+      <span class="eyebrow">P21:</span>
       <strong id="windowTitle">No P21 window detected</strong>
     </section>
     <p class="hint" id="idleHint">Open PIC Search to start chatting.</p>
-    <iframe class="chat-frame" id="chatFrame" title="AI Assistant" hidden></iframe>
+    <iframe class="chat-frame" id="chatFrame" title="AI Assistant" allow="microphone" hidden></iframe>
   </main>
   <script type="module" src="dist/sidepanel.js"></script>
 </body>
