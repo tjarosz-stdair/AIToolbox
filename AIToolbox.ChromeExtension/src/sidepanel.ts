@@ -303,6 +303,7 @@ async function handleMicStart(): Promise<void> {
     }
   });
   mediaRecorder.start();
+  postToIframe({ type: "aitoolbox:mic-started", version: 1 });
 }
 
 async function handleMicStop(): Promise<void> {

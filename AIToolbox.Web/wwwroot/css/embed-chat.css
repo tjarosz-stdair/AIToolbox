@@ -297,11 +297,23 @@ html, body {
     cursor: not-allowed;
 }
 
+.embed-mic-button.is-connecting {
+    border-color: #adb5bd;
+    color: #495057;
+    background: #e9ecef;
+    animation: embed-mic-connecting 1s ease-in-out infinite;
+}
+
 .embed-mic-button.is-recording {
     border-color: #dc3545;
     color: #ffffff;
     background: #dc3545;
     animation: embed-mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes embed-mic-connecting {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
 }
 
 @keyframes embed-mic-pulse {

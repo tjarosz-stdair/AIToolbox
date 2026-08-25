@@ -133,6 +133,9 @@
                 case 'aitoolbox:visibility':
                     onVisibility(data);
                     break;
+                case 'aitoolbox:mic-started':
+                    onMicStarted();
+                    break;
                 case 'aitoolbox:mic-audio':
                     onMicAudio(data);
                     break;
@@ -500,7 +503,11 @@
 
             if (micDelegated) {
                 micRecording = true;
-                micButton.classList.add('is-recording');
+                // Not is-recording yet -- the side panel still has to receive this message,
+                // acquire the mic fresh (see sidepanel.ts), and actually start MediaRecorder.
+                // Turning the icon red now would invite the user to talk before capture has
+                // begun. onMicStarted() flips this to is-recording once that's confirmed.
+                micButton.classList.add('is-connecting');
                 micSafetyTimeoutHandle = window.setTimeout(function () {
                     if (micRecording) {
                         stopRecording();
@@ -588,7 +595,16 @@
         // Broker (side panel) recorded the audio directly and is handing the raw bytes back down
         // — same fetch as the local-capture path, just a different source for the Blob. Never a
         // separate copy of the request logic.
+        function onMicStarted() {
+            if (!micRecording) {
+                return; // stopped or errored before this confirmation arrived -- stale, ignore
+            }
+            micButton.classList.remove('is-connecting');
+            micButton.classList.add('is-recording');
+        }
+
         function onMicAudio(data) {
+            micButton.classList.remove('is-connecting');
             micButton.classList.remove('is-recording');
             if (!data || !data.arrayBuffer) {
                 micButton.disabled = bridgeState !== 'linked';
@@ -601,6 +617,7 @@
 
         function onMicError(data) {
             micRecording = false;
+            micButton.classList.remove('is-connecting');
             micButton.classList.remove('is-recording');
             micButton.disabled = bridgeState !== 'linked';
             renderSystemNotice((data && data.message) || 'Voice input failed. Please try again.');
