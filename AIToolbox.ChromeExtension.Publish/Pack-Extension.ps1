@@ -15,7 +15,7 @@
   every copy already installed. See README.md.
 #>
 param(
-    [string]$ExtensionRoot = (Join-Path $PSScriptRoot ".."),
+    [string]$ExtensionRoot = (Join-Path (Join-Path $PSScriptRoot "..") "AIToolbox.ChromeExtension"),
     [string]$OutputDir = (Join-Path $PSScriptRoot "output"),
     [string]$KeyPath = (Join-Path $PSScriptRoot "aitoolbox-extension.pem"),
     [string]$CodebaseUrl = "https://chromeextensions.stdair.com/aitoolbox.crx",
@@ -25,7 +25,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $KeyPath)) {
-    throw "Signing key not found at '$KeyPath'. This key is permanent and generated exactly once -- see publish/README.md. Recover the existing key (from wherever it was backed up); do not generate a new one."
+    throw "Signing key not found at '$KeyPath'. This key is permanent and generated exactly once -- see README.md. Recover the existing key (from wherever it was backed up); do not generate a new one."
 }
 
 $manifestPath = Join-Path $ExtensionRoot "manifest.json"
@@ -56,7 +56,7 @@ if (Test-Path $stageDir) {
 }
 New-Item -ItemType Directory -Path $stageDir | Out-Null
 
-$excludeDirs = @("node_modules", "src", "publish", ".git")
+$excludeDirs = @("node_modules", "src", ".git")
 $excludeFiles = @("package.json", "package-lock.json", "tsconfig.json", ".gitignore")
 
 Get-ChildItem -Path $ExtensionRoot -Force | ForEach-Object {

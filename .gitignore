@@ -15,10 +15,12 @@ AIToolbox.ChromeExtension/dist/
 **/Properties/PublishProfiles/
 
 # The Chrome extension's permanent signing key -- generated exactly once (see
-# AIToolbox.ChromeExtension/publish/README.md); never commit it, back it up externally instead.
-AIToolbox.ChromeExtension/publish/*.pem
-AIToolbox.ChromeExtension/publish/output/
-AIToolbox.ChromeExtension/publish/stage/
+# AIToolbox.ChromeExtension.Publish/README.md); never commit it, back it up externally instead.
+# Deliberately kept outside AIToolbox.ChromeExtension/ itself -- that folder is what Chrome's
+# "Load unpacked" scans, and it flags any .pem found anywhere in that tree as a bundled private key.
+AIToolbox.ChromeExtension.Publish/*.pem
+AIToolbox.ChromeExtension.Publish/output/
+AIToolbox.ChromeExtension.Publish/stage/
 
 # Keep appsettings.json as a placeholder only. Put real values in ignored
 # environment-specific files, IIS settings, user secrets, or a secret store.

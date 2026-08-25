@@ -3,9 +3,11 @@
   <!--
     This project never runs. It exists purely so Visual Studio's Solution Explorer offers a real
     right-click "Publish" (Web Deploy) target; its only actual job is the PackChromeExtension
-    target below, which runs AIToolbox.ChromeExtension/publish/Pack-Extension.ps1 and publishes
-    just its 2 output files (aitoolbox.crx, aitoolbox_update_manifest.xml) to
-    chromeextensions.stdair.com. See AIToolbox.ChromeExtension/publish/README.md.
+    target below, which runs Pack-Extension.ps1 (in this same project folder -- deliberately kept
+    out of AIToolbox.ChromeExtension/ itself, since that's the folder Chrome's "Load unpacked"
+    scans, and it flags a signing key found anywhere in that tree) and publishes just its 2 output
+    files (aitoolbox.crx, aitoolbox_update_manifest.xml) to chromeextensions.stdair.com. See
+    README.md in this folder.
 
     IMPORTANT: the Web Deploy publish profile used with this project must NEVER enable "Remove
     additional files at destination"; that setting is what would let a publish delete the
@@ -28,14 +30,14 @@
     copy/sync step, unlike BeforeTargets="Publish", which can run too late to affect that list.
   -->
   <Target Name="PackChromeExtension" BeforeTargets="ComputeFilesToPublish">
-    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\AIToolbox.ChromeExtension\publish\Pack-Extension.ps1&quot;" />
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)Pack-Extension.ps1&quot;" />
 
     <ItemGroup>
-      <ResolvedFileToPublish Include="$(MSBuildThisFileDirectory)..\AIToolbox.ChromeExtension\publish\output\aitoolbox.crx">
+      <ResolvedFileToPublish Include="$(MSBuildThisFileDirectory)output\aitoolbox.crx">
         <RelativePath>aitoolbox.crx</RelativePath>
         <CopyToPublishDirectory>Always</CopyToPublishDirectory>
       </ResolvedFileToPublish>
-      <ResolvedFileToPublish Include="$(MSBuildThisFileDirectory)..\AIToolbox.ChromeExtension\publish\output\aitoolbox_update_manifest.xml">
+      <ResolvedFileToPublish Include="$(MSBuildThisFileDirectory)output\aitoolbox_update_manifest.xml">
         <RelativePath>aitoolbox_update_manifest.xml</RelativePath>
         <CopyToPublishDirectory>Always</CopyToPublishDirectory>
       </ResolvedFileToPublish>
