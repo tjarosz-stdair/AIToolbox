@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    This project never runs. It exists purely so Visual Studio's Solution Explorer offers a real
+    right-click "Publish" (Web Deploy) target; its only actual job is the PackChromeExtension
+    target below, which runs AIToolbox.ChromeExtension/publish/Pack-Extension.ps1 and publishes
+    just its 2 output files (aitoolbox.crx, aitoolbox_update_manifest.xml) to
+    chromeextensions.stdair.com. See AIToolbox.ChromeExtension/publish/README.md.
+
+    IMPORTANT: the Web Deploy publish profile used with this project must NEVER enable "Remove
+    additional files at destination"; that setting is what would let a publish delete the
+    Dayforce site's existing files. Leave it at its default (off).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <UseAppHost>false</UseAppHost>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <IsPackable>false</IsPackable>
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+  </PropertyGroup>
+
+  <!--
+    BeforeTargets="ComputeFilesToPublish" is the documented Web Publish Pipeline extension point
+    for adding files to a publish that don't come from the project's own build output; it runs
+    early enough that ResolvedFileToPublish items added here are picked up by the later
+    copy/sync step, unlike BeforeTargets="Publish", which can run too late to affect that list.
+  -->
+  <Target Name="PackChromeExtension" BeforeTargets="ComputeFilesToPublish">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\AIToolbox.ChromeExtension\publish\Pack-Extension.ps1&quot;" />
+
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(MSBuildThisFileDirectory)..\AIToolbox.ChromeExtension\publish\output\aitoolbox.crx">
+        <RelativePath>aitoolbox.crx</RelativePath>
+        <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(MSBuildThisFileDirectory)..\AIToolbox.ChromeExtension\publish\output\aitoolbox_update_manifest.xml">
+        <RelativePath>aitoolbox_update_manifest.xml</RelativePath>
+        <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Confirmed via local dry-run publishes (see publish/README.md's verification steps) that the
+    Web SDK's publish pipeline still emits a real app's leftovers even though this "app" never
+    runs: this library's own .dll/.pdb/.deps.json/staticwebassets files, and (absent
+    IsTransformWebConfigDisabled above) a web.config that would silently replace the Dayforce
+    site's real one. Rather than suppress each one individually, which is fragile against future
+    SDK changes, this keeps only the 2 files the extension publish is actually about and deletes
+    everything else the pipeline put in $(PublishDir).
+  -->
+  <Target Name="PruneToExtensionArtifactsOnly" AfterTargets="Publish;_TransformWebConfig">
+    <ItemGroup>
+      <_UnexpectedPublishedFile Include="$(PublishDir)**\*" Exclude="$(PublishDir)aitoolbox.crx;$(PublishDir)aitoolbox_update_manifest.xml" />
+    </ItemGroup>
+    <Delete Files="@(_UnexpectedPublishedFile)" />
+  </Target>
+
+</Project>
