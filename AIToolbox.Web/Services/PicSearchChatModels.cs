@@ -25,6 +25,7 @@ public static class PicSearchErrorCode
     public const string SessionTokenRequired = "session_token_required";
     public const string SessionTokenRejected = "session_token_rejected";
     public const string NotConfigured = "not_configured";
+    public const string ToolsUnavailable = "tools_unavailable";
     public const string TurnFailed = "turn_failed";
     public const string BadRequest = "bad_request";
     public const string TranscriptionFailed = "transcription_failed";

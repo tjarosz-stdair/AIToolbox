@@ -1,6 +1,7 @@
 using AIToolbox.Web.Models;
 using AIToolbox.Web.Security;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol;
 
 namespace AIToolbox.Web.Services;
 
@@ -72,7 +73,37 @@ public sealed class AiChatClientFactory : IAiChatClientFactory
                             cancellationToken);
                     }
 
-                    return await context.Function.InvokeAsync(context.Arguments, cancellationToken);
+                    try
+                    {
+                        return await context.Function.InvokeAsync(context.Arguments, cancellationToken);
+                    }
+                    catch (McpProtocolException ex) when ((int)ex.ErrorCode is <= -32000 and >= -32099)
+                    {
+                        // P21 Toolbox's MCP façade deliberately shapes a per-conversation policy
+                        // rejection (tool-call budget exhausted, insufficient scope, etc.) as a real
+                        // JSON-RPC error in this reserved implementation-defined range, not as
+                        // isError:true inside a normal tool result — see McpToolInvoker/
+                        // JsonRpcErrorCodes on that side. That means the MCP client SDK throws here
+                        // instead of returning content, and left alone this would count against
+                        // MaximumConsecutiveErrorsPerRequest below and eventually blow up the whole
+                        // turn with an aggregated exception the model never gets to explain. The
+                        // façade wrote ex.Message specifically to be read and relayed by the model
+                        // (e.g. "tell the user you have run out of lookups"), so hand it back as a
+                        // normal function result instead of rethrowing: no consecutive-error charge,
+                        // and the model gets a real turn to tell the user what happened in its own
+                        // words. McpProtocolException.Message is "Request failed (remote): " +
+                        // the façade's own message — strip that prefix so the model sees just the
+                        // façade's intended guidance.
+                        const string RemotePrefix = "Request failed (remote): ";
+                        var message = ex.Message.StartsWith(RemotePrefix, StringComparison.Ordinal)
+                            ? ex.Message[RemotePrefix.Length..]
+                            : ex.Message;
+                        return new Dictionary<string, object?>
+                        {
+                            ["status"] = "policy_rejected",
+                            ["message"] = message
+                        };
+                    }
                 };
             })
             .Build();

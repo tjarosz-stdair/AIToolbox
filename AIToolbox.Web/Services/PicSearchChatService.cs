@@ -156,37 +156,69 @@ public sealed class PicSearchChatService : IPicSearchChatService
         var uiToolsByName = new Dictionary<string, UiIntentFunction>(StringComparer.Ordinal);
         try
         {
-            mcpClient = await _mcpClientFactory.ConnectAsync(Surface, request.SessionToken, cancellationToken);
-            var mcpTools = await _mcpClientFactory.GetToolsAsync(mcpClient, conversation.Id.ToString(), cancellationToken);
-            var uiTools = await _uiCapabilities.GetToolsAsync(Surface, request.UiSurfaces, cancellationToken);
-            uiToolsByName = uiTools
-                .OfType<UiIntentFunction>()
-                .ToDictionary(tool => tool.Name, StringComparer.Ordinal);
-
-            var tools = new List<AITool>(mcpTools.Cast<AITool>());
-            tools.AddRange(uiTools);
-
-            var chatClient = _chatClientFactory.Create(provider, onToolStep);
-            var chatOptions = new ChatOptions
+            IChatClient chatClient;
+            ChatOptions chatOptions;
+            try
             {
-                Instructions = BuildSystemPrompt(request.ContextKey, request.UiSurfaces, request.AutoNavigate),
-                Tools = tools
-            };
+                mcpClient = await _mcpClientFactory.ConnectAsync(Surface, request.SessionToken, cancellationToken);
+                var mcpTools = await _mcpClientFactory.GetToolsAsync(mcpClient, conversation.Id.ToString(), cancellationToken);
+                var uiTools = await _uiCapabilities.GetToolsAsync(Surface, request.UiSurfaces, cancellationToken);
+                uiToolsByName = uiTools
+                    .OfType<UiIntentFunction>()
+                    .ToDictionary(tool => tool.Name, StringComparer.Ordinal);
 
-            var turnMessages = history.Append(userMessage).ToList();
-            response = await chatClient.GetResponseAsync(turnMessages, chatOptions, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "PicSearch chat turn failed for conversation {ConversationId}.", conversation.Id);
-            await _rollups.IncrementAsync(today, Surface, failureDelta: 1, cancellationToken: cancellationToken);
-            return Failure(
-                PicSearchErrorCode.TurnFailed,
-                "The assistant couldn't process that question right now. Please try again.",
-                sessionTokenPresent: true,
-                sessionTokenValid: true,
-                conversation.Id,
-                resetMessage);
+                var tools = new List<AITool>(mcpTools.Cast<AITool>());
+                tools.AddRange(uiTools);
+
+                chatClient = _chatClientFactory.Create(provider, onToolStep);
+                chatOptions = new ChatOptions
+                {
+                    Instructions = BuildSystemPrompt(request.ContextKey, request.UiSurfaces, request.AutoNavigate),
+                    Tools = tools
+                };
+            }
+            catch (Exception ex)
+            {
+                // Failed before the chat loop ever started (connect, tool listing) — there was no
+                // tool-calling loop for the model to get stuck in, so this is a plain "couldn't reach
+                // the data service" failure, and telling the user to retry is honest (this is often
+                // transient), unlike a mid-loop failure below.
+                _logger.LogWarning(ex, "PicSearch chat turn failed to connect/list tools for conversation {ConversationId}.", conversation.Id);
+                await _rollups.IncrementAsync(today, Surface, failureDelta: 1, cancellationToken: cancellationToken);
+                return Failure(
+                    PicSearchErrorCode.ToolsUnavailable,
+                    "Couldn't reach the P21 data service right now. Please try again in a moment.",
+                    sessionTokenPresent: true,
+                    sessionTokenValid: true,
+                    conversation.Id,
+                    resetMessage);
+            }
+
+            try
+            {
+                var turnMessages = history.Append(userMessage).ToList();
+                response = await chatClient.GetResponseAsync(turnMessages, chatOptions, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // A genuinely unexpected failure mid-turn (not the façade's own policy-rejection
+                // codes — AiChatClientFactory's FunctionInvoker already turns those into a normal
+                // tool result the model can explain to the user itself). "Try again" would be
+                // misleading here: this conversation's MCP tool-call budget (McpSessionBudget) is
+                // keyed on this very conversation id and doesn't reset per turn, so if that's what's
+                // actually going on, repeating the same question just repeats the same failure for
+                // the next ~2 hours. Point at Reset instead of implying a retry will help.
+                var correlationId = Guid.NewGuid();
+                _logger.LogWarning(ex, "PicSearch chat turn failed mid-loop for conversation {ConversationId}. Correlation={CorrelationId}", conversation.Id, correlationId);
+                await _rollups.IncrementAsync(today, Surface, failureDelta: 1, cancellationToken: cancellationToken);
+                return Failure(
+                    PicSearchErrorCode.TurnFailed,
+                    $"Something went wrong while looking that up (reference {correlationId}). This conversation may have used up its lookup budget — try Reset to start a new one, or rephrase with a shorter/simpler part or model number.",
+                    sessionTokenPresent: true,
+                    sessionTokenValid: true,
+                    conversation.Id,
+                    resetMessage);
+            }
         }
         finally
         {
