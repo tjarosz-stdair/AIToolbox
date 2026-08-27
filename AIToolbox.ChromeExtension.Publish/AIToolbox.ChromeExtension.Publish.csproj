@@ -3,7 +3,7 @@
   <!--
     This project never runs. It exists purely so Visual Studio's Solution Explorer offers a real
     right-click "Publish" (Web Deploy) target; its only actual job is the PackChromeExtension
-    target below, which runs Pack-Extension.ps1 (in this same project folder -- deliberately kept
+    target below, which runs Pack-Extension.ps1 (in this same project folder - deliberately kept
     out of AIToolbox.ChromeExtension/ itself, since that's the folder Chrome's "Load unpacked"
     scans, and it flags a signing key found anywhere in that tree) and publishes just its 2 output
     files (aitoolbox.crx, aitoolbox_update_manifest.xml) to chromeextensions.stdair.com. See
