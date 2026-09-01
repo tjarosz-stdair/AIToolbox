@@ -261,7 +261,7 @@ public sealed class ApiDocumentationController : Controller
             "toolKey" or "ToolKey" => "ProductParser, OrderTracking, GenericBatch",
             "inputMode" or "InputMode" => "json",
             "status" or "Status" => string.Join(", ", GetBatchStatuses()),
-            "scopes" or "Scopes" or "scopesJson" or "ScopesJson" => "batch:read, batch:write, batch:cancel, tool:ProductParser, tool:OrderTracking, tool:GenericBatch",
+            "scopes" or "Scopes" or "scopesJson" or "ScopesJson" => "batch:read, batch:write, batch:cancel, tool:ProductParser, tool:OrderTracking, tool:GenericBatch, calltranscripts:write, callevents:disposition",
             _ => null
         };
     }

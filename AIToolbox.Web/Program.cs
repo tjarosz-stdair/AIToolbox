@@ -5,6 +5,7 @@ using AIToolbox.Web.Controllers;
 using AIToolbox.Web.Data;
 using AIToolbox.Web.Security;
 using AIToolbox.Web.Services;
+using AIToolbox.Web.Services.CallEntityExtraction;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -67,6 +68,12 @@ builder.Services.AddHttpClient("McpClient", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddHttpClient("CallDataApi", client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AIToolbox/1.0");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
 builder.Services.AddScoped<SqlConnectionFactory>();
 builder.Services.AddScoped<DatabaseInitializer>();
 builder.Services.AddScoped<IAiProviderRepository, AiProviderRepository>();
@@ -107,6 +114,15 @@ builder.Services.AddSingleton<IProductParsingJobQueue, ProductParsingJobQueue>()
 builder.Services.AddHostedService<ProductParsingBackgroundService>();
 builder.Services.AddHostedService<AiBatchPollingService>();
 builder.Services.AddHostedService<SpeechAudioRetentionPurgeService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ICallTranscriptWindowStore, CallTranscriptWindowStore>();
+builder.Services.AddSingleton<ICallEntityExtractionQueue, CallEntityExtractionQueue>();
+builder.Services.AddSingleton<IIdentifierCandidateExtractor, RegexIdentifierCandidateExtractor>();
+builder.Services.AddScoped<IP21IdentifierValidationClient, P21IdentifierValidationClient>();
+builder.Services.AddSingleton<IEntityActionCatalog, StaticEntityActionCatalog>();
+builder.Services.AddScoped<ICallEventNotifier, CallDataApiNotifier>();
+builder.Services.AddHostedService<CallEntityExtractionBackgroundService>();
+builder.Services.AddHostedService<CallTranscriptWindowIdleCleanupService>();
 builder.Services.AddSingleton<IMarkdownRenderer, MarkdownRenderer>();
 builder.Services.AddScoped<IAuthorizationHandler, ActiveUserAuthorizationHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminUserAuthorizationHandler>();
