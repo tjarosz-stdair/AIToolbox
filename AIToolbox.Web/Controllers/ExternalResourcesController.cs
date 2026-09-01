@@ -45,6 +45,7 @@ public sealed class ExternalResourcesController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(ExternalResourceFormViewModel model, CancellationToken cancellationToken)
     {
+        ValidateTypeSpecificFields(model);
         if (!ModelState.IsValid)
         {
             return View(model);
@@ -82,6 +83,7 @@ public sealed class ExternalResourcesController : Controller
             return BadRequest();
         }
 
+        ValidateTypeSpecificFields(model);
         if (!ModelState.IsValid)
         {
             model.HasStoredSecret = await ResourceHasStoredSecretAsync(id, cancellationToken);
@@ -107,52 +109,89 @@ public sealed class ExternalResourcesController : Controller
         return !string.IsNullOrWhiteSpace(resource?.SecretCipherText);
     }
 
+    /// <summary>Which fields matter depends on ResourceType, so [Required] alone can't express
+    /// it — enforced here instead, mirroring the duplicate-type check already done inline.</summary>
+    private void ValidateTypeSpecificFields(ExternalResourceFormViewModel model)
+    {
+        switch (model.ResourceType)
+        {
+            case ExternalResourceType.AzureSpeech:
+                if (string.IsNullOrWhiteSpace(model.Region))
+                {
+                    ModelState.AddModelError(nameof(model.Region), "Azure region is required.");
+                }
+                if (string.IsNullOrWhiteSpace(model.Language))
+                {
+                    ModelState.AddModelError(nameof(model.Language), "Recognition language is required.");
+                }
+                break;
+
+            case ExternalResourceType.CallDataApi:
+                if (string.IsNullOrWhiteSpace(model.BaseUrl) || !Uri.TryCreate(model.BaseUrl, UriKind.Absolute, out _))
+                {
+                    ModelState.AddModelError(nameof(model.BaseUrl), "A valid absolute base URL is required.");
+                }
+                break;
+        }
+    }
+
     private static ExternalResource ToResource(ExternalResourceFormViewModel model)
     {
+        var configJson = model.ResourceType switch
+        {
+            ExternalResourceType.CallDataApi => JsonSerializer.Serialize(new { baseUrl = model.BaseUrl!.Trim() }),
+            _ => JsonSerializer.Serialize(new { region = model.Region.Trim(), language = model.Language.Trim() })
+        };
+
         return new ExternalResource
         {
             Id = model.Id,
             ResourceKey = model.ResourceType.ToString(),
             ResourceType = model.ResourceType,
             DisplayName = model.DisplayName,
-            ConfigJson = JsonSerializer.Serialize(new { region = model.Region.Trim(), language = model.Language.Trim() }),
+            ConfigJson = configJson,
             IsEnabled = model.IsEnabled
         };
     }
 
     private static ExternalResourceFormViewModel ToForm(ExternalResource resource)
     {
-        string region = string.Empty;
-        string language = "en-US";
-        if (!string.IsNullOrWhiteSpace(resource.ConfigJson))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(resource.ConfigJson);
-                if (doc.RootElement.TryGetProperty("region", out var regionEl))
-                {
-                    region = regionEl.GetString() ?? string.Empty;
-                }
-                if (doc.RootElement.TryGetProperty("language", out var languageEl))
-                {
-                    language = languageEl.GetString() ?? "en-US";
-                }
-            }
-            catch (JsonException)
-            {
-                // Leave defaults — a hand-edited/corrupt ConfigJson shouldn't crash the edit page.
-            }
-        }
-
-        return new ExternalResourceFormViewModel
+        var model = new ExternalResourceFormViewModel
         {
             Id = resource.Id,
             ResourceType = resource.ResourceType,
             DisplayName = resource.DisplayName,
-            Region = region,
-            Language = language,
+            Language = "en-US",
             IsEnabled = resource.IsEnabled,
             HasStoredSecret = !string.IsNullOrWhiteSpace(resource.SecretCipherText)
         };
+
+        if (string.IsNullOrWhiteSpace(resource.ConfigJson))
+        {
+            return model;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(resource.ConfigJson);
+            if (doc.RootElement.TryGetProperty("region", out var regionEl))
+            {
+                model.Region = regionEl.GetString() ?? string.Empty;
+            }
+            if (doc.RootElement.TryGetProperty("language", out var languageEl))
+            {
+                model.Language = languageEl.GetString() ?? "en-US";
+            }
+            if (doc.RootElement.TryGetProperty("baseUrl", out var baseUrlEl))
+            {
+                model.BaseUrl = baseUrlEl.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Leave defaults — a hand-edited/corrupt ConfigJson shouldn't crash the edit page.
+        }
+
+        return model;
     }
 }

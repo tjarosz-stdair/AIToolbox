@@ -1,6 +1,6 @@
 @model ExternalResourceFormViewModel
 
-<div class="alert alert-info">
+<div class="alert alert-info" data-resource-type-help="AzureSpeech" style="@(Model.ResourceType == ExternalResourceType.AzureSpeech ? "" : "display:none;")">
     <strong>Set this up in the Azure Portal first:</strong>
     <ol class="mb-0">
         <li>Azure Portal &rarr; Create a resource &rarr; search <strong>"Speech"</strong> &rarr; create it (Free F0 tier is fine for light use).</li>
@@ -8,6 +8,15 @@
         <li>Once deployed &rarr; <strong>Keys and Endpoint</strong> &rarr; copy <strong>KEY 1</strong>.</li>
         <li>Paste the region and key below and Save.</li>
     </ol>
+</div>
+
+<div class="alert alert-info" data-resource-type-help="CallDataApi" style="@(Model.ResourceType == ExternalResourceType.CallDataApi ? "" : "display:none;")">
+    <strong>The Call Data API is owned by a separate team.</strong>
+    <ol class="mb-0">
+        <li>Get the base URL and a bearer credential from the team that owns the Call Data API.</li>
+        <li>Paste the base URL and credential below and Save.</li>
+    </ol>
+    <p class="mb-0">See <code>AIToolbox/TODO_Lists/call-data-api-contract.md</code> for the wire contract this integration uses.</p>
 </div>
 
 <form method="post" class="tool-surface">
@@ -18,7 +27,14 @@
     <div class="form-grid">
         <div class="mb-3">
             <label asp-for="ResourceType" class="form-label"></label>
-            <select asp-for="ResourceType" asp-items="Html.GetEnumSelectList<ExternalResourceType>()" class="form-select"></select>
+            @* Explicit options (not Html.GetEnumSelectList, whose option values are the enum's
+               numeric string form) so the toggle script below can match on the readable name
+               that data-resource-type-field/-help also use. Enum's name-string form still binds
+               correctly on POST via the built-in enum model binder. *@
+            <select asp-for="ResourceType" class="form-select" id="resourceTypeSelect">
+                <option value="@ExternalResourceType.AzureSpeech" selected="@(Model.ResourceType == ExternalResourceType.AzureSpeech)">Azure Speech-to-Text</option>
+                <option value="@ExternalResourceType.CallDataApi" selected="@(Model.ResourceType == ExternalResourceType.CallDataApi)">Call Data API</option>
+            </select>
             <span asp-validation-for="ResourceType" class="text-danger"></span>
         </div>
 
@@ -28,14 +44,14 @@
             <span asp-validation-for="DisplayName" class="text-danger"></span>
         </div>
 
-        <div class="mb-3">
+        <div class="mb-3" data-resource-type-field="AzureSpeech" style="@(Model.ResourceType == ExternalResourceType.AzureSpeech ? "" : "display:none;")">
             <label asp-for="Region" class="form-label"></label>
             <input asp-for="Region" class="form-control" placeholder="eastus" />
             <span asp-validation-for="Region" class="text-danger"></span>
             <div class="form-text">The region you chose when creating the Speech resource in Azure.</div>
         </div>
 
-        <div class="mb-3">
+        <div class="mb-3" data-resource-type-field="AzureSpeech" style="@(Model.ResourceType == ExternalResourceType.AzureSpeech ? "" : "display:none;")">
             <label asp-for="Language" class="form-label"></label>
             <select asp-for="Language" class="form-select">
                 <option value="en-US">English (United States)</option>
@@ -50,6 +66,12 @@
                 }
             </select>
             <span asp-validation-for="Language" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3 wide" data-resource-type-field="CallDataApi" style="@(Model.ResourceType == ExternalResourceType.CallDataApi ? "" : "display:none;")">
+            <label asp-for="BaseUrl" class="form-label"></label>
+            <input asp-for="BaseUrl" class="form-control" placeholder="https://calldata.example.com" />
+            <span asp-validation-for="BaseUrl" class="text-danger"></span>
         </div>
 
         <div class="mb-3 wide">
@@ -82,3 +104,24 @@
         <button type="submit" class="btn btn-primary">Save resource</button>
     </div>
 </form>
+
+<script>
+    (function () {
+        var select = document.getElementById('resourceTypeSelect');
+        if (!select) {
+            return;
+        }
+
+        function applyResourceType() {
+            var selected = select.value;
+            document.querySelectorAll('[data-resource-type-field]').forEach(function (el) {
+                el.style.display = el.getAttribute('data-resource-type-field') === selected ? '' : 'none';
+            });
+            document.querySelectorAll('[data-resource-type-help]').forEach(function (el) {
+                el.style.display = el.getAttribute('data-resource-type-help') === selected ? '' : 'none';
+            });
+        }
+
+        select.addEventListener('change', applyResourceType);
+    })();
+</script>
