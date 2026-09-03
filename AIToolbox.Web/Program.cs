@@ -75,7 +75,13 @@ builder.Services.AddHttpClient("CallDataApi", client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
-builder.Services.AddScoped<SqlConnectionFactory>();
+// Singleton, not Scoped: it only reads a connection string once and hands out a fresh
+// SqlConnection per call (opened/disposed inline by each repository method) -- no per-request
+// state at all. Needs to be Singleton because IMcpClientCredentialRepository below (which wraps
+// it) is a dependency of UiCapabilityProvider, itself Singleton for its manifest cache to
+// actually survive across requests -- a Scoped dependency there would be a captive-dependency
+// violation (throws under DI scope validation, e.g. in Development).
+builder.Services.AddSingleton<SqlConnectionFactory>();
 builder.Services.AddScoped<DatabaseInitializer>();
 builder.Services.AddScoped<IAiProviderRepository, AiProviderRepository>();
 builder.Services.AddScoped<IExternalResourceRepository, ExternalResourceRepository>();
@@ -84,7 +90,9 @@ builder.Services.AddScoped<IEventLogRepository, EventLogRepository>();
 builder.Services.AddScoped<IPromptRunRepository, PromptRunRepository>();
 builder.Services.AddScoped<IPlatformRepository, PlatformRepository>();
 builder.Services.AddScoped<IApiConsumerRepository, ApiConsumerRepository>();
-builder.Services.AddScoped<IMcpClientCredentialRepository, McpClientCredentialRepository>();
+// Singleton for the same reason as SqlConnectionFactory above -- stateless (opens/disposes its
+// own connection per call), and UiCapabilityProvider (Singleton) depends on it directly.
+builder.Services.AddSingleton<IMcpClientCredentialRepository, McpClientCredentialRepository>();
 builder.Services.AddSingleton<IMcpAccessTokenProvider, McpAccessTokenProvider>();
 builder.Services.AddSingleton<IJwksCache, JwksCache>();
 builder.Services.AddSingleton<ISessionTokenValidator, SessionTokenValidator>();
