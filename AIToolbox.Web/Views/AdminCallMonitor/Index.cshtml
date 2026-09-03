@@ -1,0 +1,357 @@
+@using AIToolbox.Web.Services.CallEntityExtraction
+@model IReadOnlyList<ActiveCallSummary>
+@{
+    ViewData["Title"] = "Live Call Monitor";
+}
+
+<div class="page-heading">
+    <div>
+        <h1>Live Call Monitor</h1>
+        <p class="text-muted mb-0">
+            Real-time transcript and AI-detected entity prompts for active RingCX calls, in place
+            of impersonating an agent's Caller Tray session.
+        </p>
+    </div>
+</div>
+
+<div class="call-monitor-layout">
+    <div class="call-monitor-list">
+        <h2 class="h6 text-muted">Active calls</h2>
+        <div id="active-calls" data-empty-text="No active calls right now.">
+            @if (Model.Count == 0)
+            {
+                <p class="text-muted small" data-empty-row>No active calls right now.</p>
+            }
+            else
+            {
+                foreach (var call in Model)
+                {
+                    <button type="button" class="call-row" data-call-id="@call.CallId" data-agent-key="@call.AgentKey">
+                        <strong>@(string.IsNullOrWhiteSpace(call.AgentKey) ? "(unknown agent)" : call.AgentKey)</strong>
+                        <span class="text-muted small d-block">@call.CallId</span>
+                        <span class="text-muted small d-block" data-last-activity>@call.LastActivityUtc.ToString("u")</span>
+                    </button>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="call-monitor-detail">
+        <div id="no-call-selected" class="text-muted">Select an active call to watch it.</div>
+
+        <div id="call-detail" hidden>
+            <h2 class="h5" id="call-detail-heading"></h2>
+
+            <div class="call-monitor-columns">
+                <div>
+                    <h3 class="h6 text-muted">Transcript</h3>
+                    <div id="transcript-lines" class="call-monitor-transcript"></div>
+                </div>
+                <div>
+                    <h3 class="h6 text-muted">Detected prompts</h3>
+                    <div id="entity-cards" class="call-monitor-entities"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .call-monitor-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 1.5rem;
+        align-items: start;
+    }
+
+    .call-monitor-list {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+    }
+
+    .call-row {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 0.375rem;
+        padding: 0.5rem 0.6rem;
+        margin-bottom: 0.25rem;
+        cursor: pointer;
+    }
+
+    .call-row:hover {
+        background-color: var(--bs-tertiary-bg, #f8f9fa);
+    }
+
+    .call-row.selected {
+        border-color: var(--bs-primary, #0d6efd);
+        background-color: var(--bs-tertiary-bg, #f8f9fa);
+    }
+
+    .call-monitor-detail {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        min-height: 200px;
+    }
+
+    .call-monitor-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+
+    .call-monitor-transcript {
+        max-height: 480px;
+        overflow-y: auto;
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.375rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .transcript-line {
+        margin-bottom: 0.4rem;
+    }
+
+    .side-badge {
+        display: inline-block;
+        min-width: 3.5rem;
+        text-align: center;
+        border-radius: 0.25rem;
+        padding: 0 0.35rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-right: 0.4rem;
+    }
+
+    .side-badge.side-agent {
+        background-color: #cfe2ff;
+        color: #084298;
+    }
+
+    .side-badge.side-external {
+        background-color: #fff3cd;
+        color: #664d03;
+    }
+
+    .call-monitor-entities {
+        max-height: 480px;
+        overflow-y: auto;
+    }
+
+    .entity-card {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-left: 4px solid var(--bs-primary, #0d6efd);
+        border-radius: 0.375rem;
+        padding: 0.6rem 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .entity-card .actions {
+        margin-top: 0.4rem;
+    }
+
+    .entity-card .actions span {
+        display: inline-block;
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.25rem;
+        padding: 0.1rem 0.5rem;
+        margin-right: 0.3rem;
+        font-size: 0.8rem;
+    }
+</style>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+    <script>
+        (function () {
+            const activeCallsEl = document.getElementById('active-calls');
+            const noCallSelectedEl = document.getElementById('no-call-selected');
+            const callDetailEl = document.getElementById('call-detail');
+            const callDetailHeadingEl = document.getElementById('call-detail-heading');
+            const transcriptEl = document.getElementById('transcript-lines');
+            const entitiesEl = document.getElementById('entity-cards');
+
+            let selectedCallId = null;
+
+            const entityTypeLabels = {
+                model_number: 'Model Number',
+                serial_number: 'Serial Number',
+                part_number: 'Part Number'
+            };
+
+            function sideBadge(side) {
+                const normalized = (side || '').toLowerCase();
+                const cls = normalized === 'agent' ? 'side-agent' : 'side-external';
+                const label = normalized === 'agent' ? 'Agent' : 'External';
+                const span = document.createElement('span');
+                span.className = 'side-badge ' + cls;
+                span.textContent = label;
+                return span;
+            }
+
+            function appendTranscriptLine(line) {
+                const row = document.createElement('div');
+                row.className = 'transcript-line';
+                row.appendChild(sideBadge(line.side));
+                row.appendChild(document.createTextNode(line.text || ''));
+                transcriptEl.appendChild(row);
+                transcriptEl.scrollTop = transcriptEl.scrollHeight;
+            }
+
+            function appendEntityCard(notification) {
+                const card = document.createElement('div');
+                card.className = 'entity-card';
+
+                const label = entityTypeLabels[notification.entityType] || notification.entityType;
+                const title = document.createElement('div');
+                title.appendChild(sideBadge(notification.sourceUtterance && notification.sourceUtterance.side));
+                title.appendChild(document.createTextNode('Detected ' + label + ': ' + notification.canonicalValue));
+                card.appendChild(title);
+
+                const status = document.createElement('div');
+                status.className = 'text-muted small';
+                status.textContent = 'Validation: ' + (notification.validation ? notification.validation.status : 'unknown');
+                card.appendChild(status);
+
+                if (notification.actions && notification.actions.length) {
+                    const actions = document.createElement('div');
+                    actions.className = 'actions';
+                    notification.actions.forEach(function (action) {
+                        const span = document.createElement('span');
+                        span.textContent = action.label;
+                        actions.appendChild(span);
+                    });
+                    card.appendChild(actions);
+                }
+
+                entitiesEl.prepend(card);
+            }
+
+            function upsertActiveCallRow(callId, agentKey) {
+                let row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(callId) + '"]');
+                const emptyRow = activeCallsEl.querySelector('[data-empty-row]');
+                if (emptyRow) {
+                    emptyRow.remove();
+                }
+
+                if (!row) {
+                    row = document.createElement('button');
+                    row.type = 'button';
+                    row.className = 'call-row';
+                    row.dataset.callId = callId;
+                    row.dataset.agentKey = agentKey || '';
+                    row.addEventListener('click', function () { selectCall(callId); });
+                    activeCallsEl.prepend(row);
+                }
+
+                row.innerHTML = '';
+                const strong = document.createElement('strong');
+                strong.textContent = agentKey || '(unknown agent)';
+                const callIdLine = document.createElement('span');
+                callIdLine.className = 'text-muted small d-block';
+                callIdLine.textContent = callId;
+                const lastActivity = document.createElement('span');
+                lastActivity.className = 'text-muted small d-block';
+                lastActivity.setAttribute('data-last-activity', '');
+                lastActivity.textContent = new Date().toISOString();
+                row.appendChild(strong);
+                row.appendChild(callIdLine);
+                row.appendChild(lastActivity);
+            }
+
+            function removeActiveCallRow(callId) {
+                const row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(callId) + '"]');
+                if (row) {
+                    row.remove();
+                }
+
+                if (!activeCallsEl.querySelector('.call-row')) {
+                    const empty = document.createElement('p');
+                    empty.className = 'text-muted small';
+                    empty.setAttribute('data-empty-row', '');
+                    empty.textContent = activeCallsEl.dataset.emptyText;
+                    activeCallsEl.appendChild(empty);
+                }
+
+                if (selectedCallId === callId) {
+                    callDetailEl.hidden = true;
+                    noCallSelectedEl.hidden = false;
+                    selectedCallId = null;
+                }
+            }
+
+            function selectCall(callId) {
+                if (selectedCallId === callId) {
+                    return;
+                }
+
+                if (selectedCallId) {
+                    connection.invoke('LeaveCall', selectedCallId).catch(function () { });
+                }
+
+                selectedCallId = callId;
+                activeCallsEl.querySelectorAll('.call-row').forEach(function (row) {
+                    row.classList.toggle('selected', row.dataset.callId === callId);
+                });
+
+                noCallSelectedEl.hidden = true;
+                callDetailEl.hidden = false;
+                transcriptEl.innerHTML = '';
+                entitiesEl.innerHTML = '';
+                callDetailHeadingEl.textContent = 'Loading…';
+
+                connection.invoke('JoinCall', callId).catch(function () { });
+
+                fetch('@Url.Action("GetSnapshot", "AdminCallMonitor", new { callId = "__callId__" })'.replace('__callId__', encodeURIComponent(callId)))
+                    .then(function (response) { return response.json(); })
+                    .then(function (snapshot) {
+                        if (selectedCallId !== callId) {
+                            return;
+                        }
+                        callDetailHeadingEl.textContent = (snapshot.agentKey || '(unknown agent)') + ' — ' + snapshot.callId;
+                        (snapshot.lines || []).forEach(appendTranscriptLine);
+                    })
+                    .catch(function () {
+                        callDetailHeadingEl.textContent = callId;
+                    });
+            }
+
+            activeCallsEl.querySelectorAll('.call-row').forEach(function (row) {
+                row.addEventListener('click', function () { selectCall(row.dataset.callId); });
+            });
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl('/hubs/call-monitor')
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on('ActiveCallStarted', function (payload) {
+                upsertActiveCallRow(payload.callId, payload.agentKey);
+            });
+
+            connection.on('CallEnded', function (payload) {
+                removeActiveCallRow(payload.callId);
+            });
+
+            connection.on('TranscriptLineAppended', function (payload) {
+                if (payload.callId === selectedCallId) {
+                    appendTranscriptLine(payload);
+                }
+            });
+
+            connection.on('EntityDetected', function (notification) {
+                if (notification.callId === selectedCallId) {
+                    appendEntityCard(notification);
+                }
+            });
+
+            connection.start().catch(function (err) {
+                console.error('Live Call Monitor connection failed to start.', err);
+            });
+        })();
+    </script>
+}

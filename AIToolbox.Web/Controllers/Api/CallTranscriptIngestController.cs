@@ -20,15 +20,18 @@ public sealed class CallTranscriptIngestController : ControllerBase
 {
     private readonly ICallTranscriptWindowStore _windows;
     private readonly ICallEntityExtractionQueue _queue;
+    private readonly ICallActivityBroadcaster _broadcaster;
     private readonly ILogger<CallTranscriptIngestController> _logger;
 
     public CallTranscriptIngestController(
         ICallTranscriptWindowStore windows,
         ICallEntityExtractionQueue queue,
+        ICallActivityBroadcaster broadcaster,
         ILogger<CallTranscriptIngestController> logger)
     {
         _windows = windows;
         _queue = queue;
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
@@ -51,8 +54,18 @@ public sealed class CallTranscriptIngestController : ControllerBase
         }
 
         var utteranceId = $"{request.SegmentId}:{request.Sequence}";
-        var window = _windows.GetOrCreate(request.CallId);
+        var window = _windows.GetOrCreate(request.CallId, out var wasCreated);
         window.AppendFinalSegment(request.Text, utteranceId, request.Side, request.AgentKey, request.Sequence, request.CapturedAtUtc);
+
+        if (wasCreated)
+        {
+            await _broadcaster.ActiveCallStartedAsync(request.CallId, window.AgentKey);
+        }
+
+        await _broadcaster.TranscriptLineAppendedAsync(
+            request.CallId,
+            window.AgentKey,
+            new TranscriptLine(utteranceId, request.Side, request.Text, request.Sequence, request.CapturedAtUtc));
 
         try
         {

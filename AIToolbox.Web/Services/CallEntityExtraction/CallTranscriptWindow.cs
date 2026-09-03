@@ -108,24 +108,45 @@ public sealed class CallTranscriptWindow
     }
 }
 
+/// <summary>Snapshot of one currently-tracked call, for the admin Live Call Monitor's active-calls list.</summary>
+public sealed record ActiveCallSummary(string CallId, string AgentKey, DateTime LastActivityUtc);
+
 public interface ICallTranscriptWindowStore
 {
     CallTranscriptWindow GetOrCreate(string callId);
 
-    /// <summary>Drops call state that's seen no activity for longer than <paramref name="idleThreshold"/>.</summary>
-    int RemoveIdle(TimeSpan idleThreshold);
+    /// <summary>Same as GetOrCreate(string), but also reports whether this call was previously
+    /// untracked -- used to fire an "active call started" signal exactly once per call.</summary>
+    CallTranscriptWindow GetOrCreate(string callId, out bool wasCreated);
+
+    /// <summary>Drops call state that's seen no activity for longer than <paramref name="idleThreshold"/>.
+    /// Returns the dropped callIds (not just a count) so a caller can signal "call ended" per one.</summary>
+    IReadOnlyList<string> RemoveIdle(TimeSpan idleThreshold);
+
+    /// <summary>All calls currently tracked, most recently active first -- for the admin Live Call
+    /// Monitor's active-calls list.</summary>
+    IReadOnlyList<ActiveCallSummary> ListActive();
 }
 
 public sealed class CallTranscriptWindowStore : ICallTranscriptWindowStore
 {
     private readonly ConcurrentDictionary<string, CallTranscriptWindow> _windows = new(StringComparer.OrdinalIgnoreCase);
 
-    public CallTranscriptWindow GetOrCreate(string callId)
+    public CallTranscriptWindow GetOrCreate(string callId) => GetOrCreate(callId, out _);
+
+    public CallTranscriptWindow GetOrCreate(string callId, out bool wasCreated)
     {
-        return _windows.GetOrAdd(callId, id => new CallTranscriptWindow(id));
+        var created = false;
+        var window = _windows.GetOrAdd(callId, id =>
+        {
+            created = true;
+            return new CallTranscriptWindow(id);
+        });
+        wasCreated = created;
+        return window;
     }
 
-    public int RemoveIdle(TimeSpan idleThreshold)
+    public IReadOnlyList<string> RemoveIdle(TimeSpan idleThreshold)
     {
         var cutoffUtc = DateTime.UtcNow - idleThreshold;
         var idleCallIds = _windows
@@ -138,6 +159,14 @@ public sealed class CallTranscriptWindowStore : ICallTranscriptWindowStore
             _windows.TryRemove(callId, out _);
         }
 
-        return idleCallIds.Count;
+        return idleCallIds;
+    }
+
+    public IReadOnlyList<ActiveCallSummary> ListActive()
+    {
+        return _windows.Values
+            .Select(w => new ActiveCallSummary(w.CallId, w.AgentKey, w.LastActivityUtc))
+            .OrderByDescending(s => s.LastActivityUtc)
+            .ToList();
     }
 }

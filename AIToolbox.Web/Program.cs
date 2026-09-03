@@ -3,6 +3,7 @@ using AIToolbox.Web.Authorization;
 using AIToolbox.Web.Configuration;
 using AIToolbox.Web.Controllers;
 using AIToolbox.Web.Data;
+using AIToolbox.Web.Hubs;
 using AIToolbox.Web.Security;
 using AIToolbox.Web.Services;
 using AIToolbox.Web.Services.CallEntityExtraction;
@@ -122,6 +123,8 @@ builder.Services.AddSingleton<P21ValidationCircuitBreaker>();
 builder.Services.AddScoped<IP21IdentifierValidationClient, P21IdentifierValidationClient>();
 builder.Services.AddSingleton<IEntityActionCatalog, StaticEntityActionCatalog>();
 builder.Services.AddScoped<ICallEventNotifier, CallDataApiNotifier>();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<ICallActivityBroadcaster, CallActivityBroadcaster>();
 builder.Services.AddHostedService<CallEntityExtractionBackgroundService>();
 builder.Services.AddHostedService<CallTranscriptWindowIdleCleanupService>();
 builder.Services.AddSingleton<IMarkdownRenderer, MarkdownRenderer>();
@@ -415,6 +418,7 @@ app.UseAuthorization();
 
 app.MapStaticAssets();
 app.MapControllers();
+app.MapHub<CallMonitorHub>("/hubs/call-monitor");
 
 app.MapControllerRoute(
     name: "default",

@@ -14,6 +14,7 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
     private readonly ICallTranscriptWindowStore _windows;
     private readonly IIdentifierCandidateExtractor _extractor;
     private readonly IEntityActionCatalog _actionCatalog;
+    private readonly ICallActivityBroadcaster _broadcaster;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CallEntityExtractionBackgroundService> _logger;
 
@@ -22,6 +23,7 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
         ICallTranscriptWindowStore windows,
         IIdentifierCandidateExtractor extractor,
         IEntityActionCatalog actionCatalog,
+        ICallActivityBroadcaster broadcaster,
         IServiceScopeFactory scopeFactory,
         ILogger<CallEntityExtractionBackgroundService> logger)
     {
@@ -29,6 +31,7 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
         _windows = windows;
         _extractor = extractor;
         _actionCatalog = actionCatalog;
+        _broadcaster = broadcaster;
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
@@ -108,6 +111,7 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
 
             var notification = BuildNotification(callId, window, candidate, validation);
             await notifier.NotifyEntityDetectedAsync(notification, cancellationToken);
+            await _broadcaster.EntityDetectedAsync(notification);
         }
     }
 

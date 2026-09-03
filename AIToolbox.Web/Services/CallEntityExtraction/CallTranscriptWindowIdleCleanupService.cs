@@ -11,13 +11,16 @@ public sealed class CallTranscriptWindowIdleCleanupService : BackgroundService
     private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(5);
 
     private readonly ICallTranscriptWindowStore _windows;
+    private readonly ICallActivityBroadcaster _broadcaster;
     private readonly ILogger<CallTranscriptWindowIdleCleanupService> _logger;
 
     public CallTranscriptWindowIdleCleanupService(
         ICallTranscriptWindowStore windows,
+        ICallActivityBroadcaster broadcaster,
         ILogger<CallTranscriptWindowIdleCleanupService> logger)
     {
         _windows = windows;
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
@@ -29,9 +32,14 @@ public sealed class CallTranscriptWindowIdleCleanupService : BackgroundService
             try
             {
                 var removed = _windows.RemoveIdle(IdleThreshold);
-                if (removed > 0)
+                if (removed.Count > 0)
                 {
-                    _logger.LogInformation("Dropped {Count} idle call transcript windows.", removed);
+                    _logger.LogInformation("Dropped {Count} idle call transcript windows.", removed.Count);
+
+                    foreach (var callId in removed)
+                    {
+                        await _broadcaster.CallEndedAsync(callId);
+                    }
                 }
             }
             catch (Exception ex)

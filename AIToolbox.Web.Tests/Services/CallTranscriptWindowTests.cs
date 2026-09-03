@@ -59,7 +59,35 @@ public sealed class CallTranscriptWindowTests
 
         var removed = store.RemoveIdle(TimeSpan.Zero);
 
-        Assert.Equal(1, removed);
+        Assert.Equal(["stale-call"], removed);
+    }
+
+    [Fact]
+    public void GetOrCreate_WithOutParam_ReportsCreatedOnlyOnce()
+    {
+        var store = new CallTranscriptWindowStore();
+
+        store.GetOrCreate("call-1", out var firstCallWasCreated);
+        store.GetOrCreate("call-1", out var secondCallWasCreated);
+
+        Assert.True(firstCallWasCreated);
+        Assert.False(secondCallWasCreated);
+    }
+
+    [Fact]
+    public void ListActive_ReturnsMostRecentlyActiveFirst()
+    {
+        var store = new CallTranscriptWindowStore();
+        var older = store.GetOrCreate("older-call");
+        older.AppendFinalSegment("hi", "u-1", "External", "acme:jsmith", 1, DateTime.UtcNow);
+        Thread.Sleep(10);
+        var newer = store.GetOrCreate("newer-call");
+        newer.AppendFinalSegment("hi", "u-1", "External", "acme:bwhite", 1, DateTime.UtcNow);
+
+        var active = store.ListActive();
+
+        Assert.Equal("newer-call", active[0].CallId);
+        Assert.Equal("older-call", active[1].CallId);
     }
 
     [Fact]

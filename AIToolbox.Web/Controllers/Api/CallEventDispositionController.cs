@@ -1,5 +1,6 @@
 using AIToolbox.Web.Models;
 using AIToolbox.Web.Security;
+using AIToolbox.Web.Services.CallEntityExtraction;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -24,15 +25,17 @@ public sealed class CallEventDispositionController : ControllerBase
         "action_selected", "dismissed", "expired", "delivery_failed"
     };
 
+    private readonly ICallActivityBroadcaster _broadcaster;
     private readonly ILogger<CallEventDispositionController> _logger;
 
-    public CallEventDispositionController(ILogger<CallEventDispositionController> logger)
+    public CallEventDispositionController(ICallActivityBroadcaster broadcaster, ILogger<CallEventDispositionController> logger)
     {
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
     [HttpPost("{entityId}/disposition")]
-    public IActionResult PostDisposition(string entityId, [FromBody] CallEventDispositionRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> PostDisposition(string entityId, [FromBody] CallEventDispositionRequest request, CancellationToken cancellationToken)
     {
         if (!User.IsApiConsumer() || !User.HasApiScope("callevents:disposition"))
         {
@@ -61,6 +64,8 @@ public sealed class CallEventDispositionController : ControllerBase
             request.CallId,
             request.Disposition,
             request.SelectedActionId);
+
+        await _broadcaster.DispositionRecordedAsync(request);
 
         return Accepted(new { recorded = true });
     }
