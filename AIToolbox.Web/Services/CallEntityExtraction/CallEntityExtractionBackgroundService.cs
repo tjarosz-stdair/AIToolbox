@@ -123,7 +123,7 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
             EntityId = $"ent-{Guid.NewGuid():N}",
             UtteranceId = window.LastUtteranceId,
             DetectedAtUtc = DateTime.UtcNow,
-            EntityType = candidate.TypeGuess == IdentifierTypeGuess.Serial ? "serial_number" : "model_number",
+            EntityType = ToWireEntityType(validation.DetectedEntityType),
             CanonicalValue = candidate.CanonicalValue,
             RawSpokenText = candidate.RawSpokenText,
             Confidence = candidate.Confidence,
@@ -138,9 +138,19 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
                 Text = candidate.ContextSnippet,
                 OffsetStart = candidate.ContextOffsetStart,
                 OffsetEnd = candidate.ContextOffsetStart + candidate.ContextOffsetLength,
-                Speaker = window.LastSpeaker
+                Side = window.LastSide
             },
-            Actions = _actionCatalog.GetActions(candidate.TypeGuess)
+            Actions = _actionCatalog.GetActions(validation.DetectedEntityType)
+        };
+    }
+
+    private static string ToWireEntityType(DetectedEntityType entityType)
+    {
+        return entityType switch
+        {
+            DetectedEntityType.SerialNumber => "serial_number",
+            DetectedEntityType.PartNumber => "part_number",
+            _ => "model_number"
         };
     }
 

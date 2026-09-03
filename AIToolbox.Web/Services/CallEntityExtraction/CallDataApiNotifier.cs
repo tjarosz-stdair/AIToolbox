@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AIToolbox.Web.Data;
@@ -65,9 +64,12 @@ public sealed class CallDataApiNotifier : ICallEventNotifier
             {
                 Content = JsonContent.Create(notification, options: JsonOptions)
             };
+            // The Hub's ApiKeyMiddleware is a single shared-secret check on X-API-Key -- not the
+            // ApiConsumerKey/Bearer scheme AIToolbox's own inbound endpoints use. Standardizing on
+            // whichever convention the *receiving* side actually expects.
             if (!string.IsNullOrWhiteSpace(credential))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
+                request.Headers.Add("X-API-Key", credential);
             }
 
             var response = await client.SendAsync(request, cancellationToken);

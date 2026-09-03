@@ -69,7 +69,7 @@ public sealed partial class RegexIdentifierCandidateExtractor : IIdentifierCandi
             var (contextSnippet, contextOffsetStart) = ExtractContext(windowText, firstToken.Index, rawSpokenText.Length);
             var typeGuess = LooksLikeSerialContext(contextSnippet)
                 ? IdentifierTypeGuess.Serial
-                : IdentifierTypeGuess.ModelOrItem;
+                : IdentifierTypeGuess.ModelOrPart;
 
             results.Add(new IdentifierCandidate
             {

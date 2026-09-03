@@ -17,20 +17,22 @@ public sealed class P21ValidationResultMapperTests
         Assert.Equal(ValidationStatus.Validated, result!.Status);
         Assert.Equal(["59MN7C080C171214"], result.CandidateValues);
         Assert.Equal("p21_mcp:resolve_model", result.Source);
+        Assert.Equal(DetectedEntityType.ModelNumber, result.DetectedEntityType);
     }
 
     [Fact]
-    public void MapModelResolution_Ok_FallsBackToSalesPackageIdWhenNoPimCode()
+    public void MapModelResolution_Ok_NoPimCode_ReturnsPartNumberWithSalesPackageId()
     {
         var structured = Parse("""{"status":"ok","resolved":{"pimCode":null,"primarySalesPackageId":"SP-123"}}""");
 
         var result = P21ValidationResultMapper.MapModelResolution(structured, "queried-value");
 
         Assert.Equal(["SP-123"], result!.CandidateValues);
+        Assert.Equal(DetectedEntityType.PartNumber, result.DetectedEntityType);
     }
 
     [Fact]
-    public void MapModelResolution_Ambiguous_ReturnsAllCandidateValues()
+    public void MapModelResolution_Ambiguous_AnyPimCode_ReturnsAllCandidateValuesAsModelNumber()
     {
         var structured = Parse("""
             {"status":"ambiguous","candidates":[
@@ -43,6 +45,22 @@ public sealed class P21ValidationResultMapperTests
 
         Assert.Equal(ValidationStatus.Ambiguous, result!.Status);
         Assert.Equal(["MODEL-A", "SP-B"], result.CandidateValues);
+        Assert.Equal(DetectedEntityType.ModelNumber, result.DetectedEntityType);
+    }
+
+    [Fact]
+    public void MapModelResolution_Ambiguous_NoPimCodes_ReturnsPartNumber()
+    {
+        var structured = Parse("""
+            {"status":"ambiguous","candidates":[
+                {"pimCode":null,"primarySalesPackageId":"SP-A"},
+                {"pimCode":null,"primarySalesPackageId":"SP-B"}
+            ]}
+            """);
+
+        var result = P21ValidationResultMapper.MapModelResolution(structured, "irrelevant");
+
+        Assert.Equal(DetectedEntityType.PartNumber, result!.DetectedEntityType);
     }
 
     [Fact]
@@ -77,6 +95,7 @@ public sealed class P21ValidationResultMapperTests
         Assert.Equal(ValidationStatus.Validated, result!.Status);
         Assert.Equal(["1234567890"], result.CandidateValues);
         Assert.Equal("p21_mcp:get_warranty_by_serial", result.Source);
+        Assert.Equal(DetectedEntityType.SerialNumber, result.DetectedEntityType);
     }
 
     [Fact]
@@ -89,6 +108,7 @@ public sealed class P21ValidationResultMapperTests
         Assert.NotNull(result);
         Assert.Equal(ValidationStatus.NotFoundInWindow, result!.Status);
         Assert.Equal(["OLD1970SERIAL"], result.CandidateValues);
+        Assert.Equal(DetectedEntityType.SerialNumber, result.DetectedEntityType);
     }
 
     [Fact]

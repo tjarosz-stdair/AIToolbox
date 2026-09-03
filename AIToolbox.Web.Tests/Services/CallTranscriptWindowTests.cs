@@ -9,8 +9,8 @@ public sealed class CallTranscriptWindowTests
     {
         var window = new CallTranscriptWindow("call-1");
 
-        window.AppendFinalSegment("the model number is 24 ABB", "u-1", "Customer");
-        var stitched = window.AppendFinalSegment("324 ABN 3 if that helps", "u-2", "Customer");
+        window.AppendFinalSegment("the model number is 24 ABB", "u-1", "External", "acme:jsmith", 1, DateTime.UtcNow);
+        var stitched = window.AppendFinalSegment("324 ABN 3 if that helps", "u-2", "External", "acme:jsmith", 2, DateTime.UtcNow);
 
         Assert.Equal("the model number is 24 ABB 324 ABN 3 if that helps", stitched);
     }
@@ -21,7 +21,7 @@ public sealed class CallTranscriptWindowTests
         var window = new CallTranscriptWindow("call-1");
         for (var i = 0; i < 40; i++)
         {
-            window.AppendFinalSegment($"word{i}", $"u-{i}", "Customer");
+            window.AppendFinalSegment($"word{i}", $"u-{i}", "External", "acme:jsmith", i, DateTime.UtcNow);
         }
 
         var stitched = window.CurrentText();
@@ -45,7 +45,7 @@ public sealed class CallTranscriptWindowTests
         var store = new CallTranscriptWindowStore();
 
         var first = store.GetOrCreate("call-1");
-        first.AppendFinalSegment("hello world", "u-1", "Customer");
+        first.AppendFinalSegment("hello world", "u-1", "External", "acme:jsmith", 1, DateTime.UtcNow);
         var second = store.GetOrCreate("call-1");
 
         Assert.Equal("hello world", second.CurrentText());
@@ -60,5 +60,32 @@ public sealed class CallTranscriptWindowTests
         var removed = store.RemoveIdle(TimeSpan.Zero);
 
         Assert.Equal(1, removed);
+    }
+
+    [Fact]
+    public void AppendFinalSegment_AgentKeyIsSetOnceAndNotOverwritten()
+    {
+        var window = new CallTranscriptWindow("call-1");
+
+        window.AppendFinalSegment("hello", "u-1", "Agent", "acme:jsmith", 1, DateTime.UtcNow);
+        window.AppendFinalSegment("world", "u-2", "External", "acme:someoneelse", 2, DateTime.UtcNow);
+
+        Assert.Equal("acme:jsmith", window.AgentKey);
+    }
+
+    [Fact]
+    public void RecentLines_DropsOldestPastRingBufferLimit()
+    {
+        var window = new CallTranscriptWindow("call-1");
+        for (var i = 0; i < 60; i++)
+        {
+            window.AppendFinalSegment($"word{i}", $"u-{i}", "External", "acme:jsmith", i, DateTime.UtcNow);
+        }
+
+        var lines = window.RecentLines();
+
+        Assert.Equal(50, lines.Count);
+        Assert.Equal("u-10", lines[0].UtteranceId);
+        Assert.Equal("u-59", lines[^1].UtteranceId);
     }
 }

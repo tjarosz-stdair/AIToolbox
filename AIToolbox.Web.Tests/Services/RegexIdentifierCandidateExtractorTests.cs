@@ -18,12 +18,12 @@ public sealed class RegexIdentifierCandidateExtractorTests
     }
 
     [Fact]
-    public void ExtractCandidates_DefaultsToModelOrItemWithoutSerialContext()
+    public void ExtractCandidates_DefaultsToModelOrPartWithoutSerialContext()
     {
         var candidates = _extractor.ExtractCandidates("the model number is 24 ABB 324 ABN 3 if that helps");
 
         var candidate = Assert.Single(candidates);
-        Assert.Equal(IdentifierTypeGuess.ModelOrItem, candidate.TypeGuess);
+        Assert.Equal(IdentifierTypeGuess.ModelOrPart, candidate.TypeGuess);
     }
 
     [Fact]

@@ -50,8 +50,9 @@ public sealed class CallTranscriptIngestController : ControllerBase
             return Accepted();
         }
 
+        var utteranceId = $"{request.SegmentId}:{request.Sequence}";
         var window = _windows.GetOrCreate(request.CallId);
-        window.AppendFinalSegment(request.Text, request.UtteranceId, request.Speaker);
+        window.AppendFinalSegment(request.Text, utteranceId, request.Side, request.AgentKey, request.Sequence, request.CapturedAtUtc);
 
         try
         {

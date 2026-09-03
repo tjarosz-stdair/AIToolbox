@@ -11,5 +11,5 @@ namespace AIToolbox.Web.Services.CallEntityExtraction;
 /// </summary>
 public interface IEntityActionCatalog
 {
-    IReadOnlyList<ActionDescriptor> GetActions(IdentifierTypeGuess entityTypeGuess);
+    IReadOnlyList<ActionDescriptor> GetActions(DetectedEntityType entityType);
 }

@@ -1,28 +1,51 @@
 namespace AIToolbox.Web.Models;
 
+/// <summary>
+/// Wire shape for the Hub -&gt; AIToolbox transcript relay leg
+/// (POST /api/v1/call-transcripts/segments). UtteranceId is deliberately not a wire field -- the
+/// Hub/Listener only ever have SegmentId + a per-segment Sequence counter; AIToolbox derives its
+/// own internal utterance identity from those two ("{SegmentId}:{Sequence}") rather than requiring
+/// a third, redundant identifier to be kept in sync across three codebases.
+/// </summary>
 public sealed class TranscriptSegmentRequest
 {
     public string CallId { get; set; } = string.Empty;
-    public string UtteranceId { get; set; } = string.Empty;
+    public string AgentKey { get; set; } = string.Empty;
+    public string SegmentId { get; set; } = string.Empty;
     public int Sequence { get; set; }
-    public string Speaker { get; set; } = string.Empty;
+
+    /// <summary>Which side of the call this line came from -- exactly "Agent" or "External",
+    /// never a free-text speaker name. Computed once at the source (RingCXStreamListener's
+    /// MapParticipantTypeToSide) and carried through unchanged.</summary>
+    public string Side { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
+    public long OffsetMs { get; set; }
     public bool IsFinal { get; set; }
     public double? Confidence { get; set; }
     public DateTime CapturedAtUtc { get; set; }
 }
 
 /// <summary>
-/// "model_or_item" covers both Carrier PIC model numbers and general P21 item ids/supplier part
-/// numbers — the regex extractor can't tell those apart from shape alone, only P21 validation can.
-/// "serial" is a distinct guess based on nearby context words ("serial", "serial number"), never
-/// corpus-matched (see the fast-matching design notes) since P21's serial history only covers its
-/// own ~10-year retention window.
+/// "model_or_part" covers both Carrier PIC model numbers and general P21 item ids/supplier part
+/// numbers — the regex extractor can't tell those apart from shape alone, only P21 validation can
+/// (see ValidationResult.DetectedEntityType). "serial" is a distinct guess based on nearby context
+/// words ("serial", "serial number"), never corpus-matched (see the fast-matching design notes)
+/// since P21's serial history only covers its own ~10-year retention window.
 /// </summary>
 public enum IdentifierTypeGuess
 {
-    ModelOrItem,
+    ModelOrPart,
     Serial
+}
+
+/// <summary>The concrete entity type a candidate resolved to, known only after P21 validation
+/// (see ValidationResult.DetectedEntityType) -- drives both the outbound EntityType wire value and
+/// which actions IEntityActionCatalog offers (Part Number never gets "Open in PIC Search").</summary>
+public enum DetectedEntityType
+{
+    ModelNumber,
+    SerialNumber,
+    PartNumber
 }
 
 public sealed class IdentifierCandidate
@@ -56,6 +79,11 @@ public sealed class ValidationResult
     public required ValidationStatus Status { get; init; }
     public required IReadOnlyList<string> CandidateValues { get; init; }
     public required string Source { get; init; }
+
+    /// <summary>Set by P21ValidationResultMapper -- the only place that can actually distinguish
+    /// a Model Number from a Part Number (both start out as the same IdentifierTypeGuess.ModelOrPart
+    /// guess). Always SerialNumber for a warranty-lookup result.</summary>
+    public required DetectedEntityType DetectedEntityType { get; init; }
 }
 
 /// <summary>One action offered on a detected entity, e.g. "Search Carrier PIC for this model".
@@ -98,7 +126,9 @@ public sealed class EntityDetectedSourceUtterance
     public required string Text { get; init; }
     public required int OffsetStart { get; init; }
     public required int OffsetEnd { get; init; }
-    public required string Speaker { get; init; }
+
+    /// <summary>Exactly "Agent" or "External" -- see TranscriptSegmentRequest.Side.</summary>
+    public required string Side { get; init; }
 }
 
 /// <summary>Inbound payload from the Call Data API's disposition webhook. See the same contract doc.</summary>

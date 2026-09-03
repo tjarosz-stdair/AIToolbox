@@ -1,10 +1,17 @@
 # Call Data API Boundary — Data Contract
 
-**Status:** proposed, not yet implemented. This is the handoff artifact for whoever builds the
-Call Data API / Caller Tray — AI Toolbox owns and implements both HTTP calls described below;
-the Call Data API team owns everything on their side of them (the SignalR push to the Caller Tray,
-the tray's UI, and how a call gets correlated to a signed-in rep).
-**Date:** 2026-09-01
+**Status:** IMPLEMENTED on both sides. AI Toolbox implements both HTTP calls described below
+(`CallDataApiNotifier`/`CallEventDispositionController`); the Call Data API (RingCXAgentHubAPI,
+"the Hub") implements the receiving/sending halves (`CallEventsController`/
+`AiToolboxRelayService.ReportDispositionAsync`) plus the SignalR push to the Caller Tray, the
+tray's UI, and call-to-rep correlation.
+**Date:** 2026-09-01, updated after implementation.
+
+**Auth correction from the original proposal below:** outbound (§1, AI Toolbox → Call Data API)
+uses the Hub's own shared-secret scheme (`X-API-Key`, checked by `ApiKeyMiddleware` — the same
+mechanism protecting every other Hub endpoint), not AI Toolbox's `ApiConsumerKey` scheme. Inbound
+(§2, Call Data API → AI Toolbox) does use AI Toolbox's `ApiConsumerKey` scheme as originally
+described (`X-AIToolbox-Api-Key` header, scopes `calltranscripts:write`/`callevents:disposition`).
 **Source:** extracted from the "Real-Time Call Entity Extraction Pipeline" plan
 (`C:\Users\tjarosz.STDAIR\.claude\plans\i-am-designing-a-zazzy-torvalds.md`), which covers the
 full pipeline this contract is one boundary of — see that plan for how entities are detected and
@@ -36,9 +43,12 @@ credentials issued to/by the Call Data API.
 
 ## 1. Outbound: entity detected (AI Toolbox → Call Data API)
 
-`POST /api/call-events/entity-detected` — **illustrative path; final route is owned by the Call
-Data API team.** AI Toolbox calls this endpoint using a `callevents:write`-scoped credential the
-Call Data API issues to it.
+`POST /api/call-events/entity-detected` — implemented by `CallEventsController.PostEntityDetected`
+on the Hub. Authenticated with the Hub's shared `X-API-Key` (not a `callevents:write`-scoped
+AI Toolbox credential as originally proposed — see the auth correction above). The Hub resolves
+which agent's tray to route the resulting prompt card to via `CallAgentRegistry`, an in-memory
+`callId → agentKey` map populated on every transcript-segment relay (§ RingCXAgentHubAPI's own
+`docs/AIToolboxContract.md`) — AI Toolbox's payload deliberately doesn't carry agent identity.
 
 ### Request body
 
@@ -61,10 +71,12 @@ Call Data API issues to it.
     "text": "the model number is 24 ABB 324 ABN 3, can you check on it",
     "offsetStart": 19,
     "offsetEnd": 39,
-    "speaker": "Customer"
+    "side": "External"
   },
   "actions": [
-    { "actionId": "search-carrier-pic", "label": "Search Carrier PIC for this model", "requiresConfirmation": false }
+    { "actionId": "add-to-order", "label": "Add to Order", "requiresConfirmation": false },
+    { "actionId": "search-carrier-pic", "label": "Open in PIC Search", "requiresConfirmation": false },
+    { "actionId": "check-stock", "label": "Check Stock", "requiresConfirmation": false }
   ]
 }
 ```
@@ -75,10 +87,16 @@ Call Data API issues to it.
   uses to identify the call must round-trip here; the Call Data API needs it to know which live
   call (and which rep's Caller Tray) to route the notification to.
 - **`entityId`** — a unique id per detected entity, minted by AI Toolbox. This is the correlation
-  key for the disposition webhook (§2) and should be treated as opaque.
-- **`entityType`** — one of `model_number` | `part_number` | `serial_number` for this phase.
-  Customer/contact/PO/job-name entity types are an explicit future phase, not yet built — do not
-  assume this enum is closed indefinitely.
+  key for the disposition webhook (§2) and should be treated as opaque. **The Hub uses this
+  value verbatim as the tray-facing `AiPromptMessage.PromptId`** — it must never mint its own id
+  for a card built from this notification, or disposition correlation breaks.
+- **`entityType`** — one of `model_number` | `part_number` | `serial_number`, all three genuinely
+  implemented (`CallEntityExtractionBackgroundService`/`P21ValidationResultMapper` distinguish
+  Model from Part post-validation via presence of a PIC `pimCode` vs. a bare
+  `primarySalesPackageId` — a heuristic on today's `resolve_model` response shape worth validating
+  against real P21 data, not a distinct P21-side capability). Customer/contact/PO/job-name entity
+  types are an explicit future phase, not yet built — do not assume this enum is closed
+  indefinitely.
 - **`canonicalValue`** — the P21/Carrier-canonical form of the identifier (e.g. despaced,
   correctly-cased), not necessarily identical to what was literally spoken.
 - **`rawSpokenText`** — the despaced-candidate form as extracted from the transcript, kept for
@@ -93,14 +111,16 @@ Call Data API issues to it.
     20 years old. Treat this as "P21 has no record, not necessarily wrong" and still offer
     relevant actions (e.g. a Carrier PIC/warranty-history search that isn't bounded by P21's
     retention), rather than suppressing it as noise.
-- **`actions`** — a list of `{actionId, label, requiresConfirmation}` entries. **This is a
-  deliberate placeholder seam on the AI Toolbox side today** (`StaticEntityActionCatalog`, a
-  small hardcoded per-entity-type mapping) — it is not yet backed by a live P21 action-capability
-  system. The Call Data API should treat this list as authoritative and opaque (render `label`,
-  post back whichever `actionId` the rep picks) rather than special-casing specific action ids;
-  the set of possible actions and what `requiresConfirmation` implies operationally may expand
-  once the P21-side action/mutation work (in progress separately) lands. Nothing about this
-  contract needs to change when that happens.
+- **`actions`** — a list of `{actionId, label, requiresConfirmation}` entries, sourced from
+  `StaticEntityActionCatalog`: Model Number and Serial Number both get `add-to-order`/
+  `search-carrier-pic`/`check-stock`; Part Number gets `add-to-order`/`check-stock` only (no PIC
+  search — PIC is a model/equipment catalog, not a supplier-part lookup). **This remains a
+  deliberate placeholder seam** — it is not yet backed by a live P21 action-capability system.
+  The Call Data API should treat this list as authoritative and opaque (render `label`, post back
+  whichever `actionId` the rep picks) rather than special-casing specific action ids. What
+  eventually happens after a rep clicks one of these buttons (driving P21's GUI via a Caller
+  Tray → Chrome-extension message-passing path) is a separate, out-of-scope effort — clicking a
+  button today only produces the disposition telemetry described in §2, nothing executes.
 
 ### Expected response
 
@@ -156,19 +176,18 @@ this phase.
 
 ---
 
-## 3. Open items for the Call Data API team to resolve
+## 3. Open items
 
-These are flagged, not decided, on the AI Toolbox side — they're the Call Data API's design
-questions to answer:
-
-1. **Call-to-rep correlation.** AI Toolbox's outbound payload identifies the call (`callId`) but
-   not the rep — the Call Data API needs its own mechanism for knowing which signed-in user's
-   Caller Tray a given `callId` belongs to (likely via whatever RingCX/telephony integration or
-   M365-authenticated session registration the Caller Tray already does on call start). AI
-   Toolbox has no visibility into that mapping and doesn't propose to.
+1. ~~**Call-to-rep correlation.**~~ **Resolved.** The Hub's `CallAgentRegistry` maps `callId` →
+   `agentKey` in-memory, populated from every transcript-segment relay it already makes (which
+   carries a resolved `agentKey`) before any entity is ever detected for that call. A callId the
+   Hub has no record of (e.g. registry entry expired after its 4-hour TTL) is logged and dropped
+   rather than guessed at.
 2. **Retry/redelivery semantics.** If the Call Data API is briefly unreachable, AI Toolbox
    currently just logs and moves on (§1). If guaranteed delivery matters more than that, the Call
    Data API team should specify what they need (e.g. an idempotent redelivery window keyed on
-   `entityId`) and it can be added without changing the payload shape.
+   `entityId`) and it can be added without changing the payload shape. Still open.
 3. **Notification expiry.** How long a prompt should stay live in the Caller Tray before the Call
-   Data API reports `disposition: "expired"` is a UX decision for that team, not specified here.
+   Data API reports `disposition: "expired"` is a UX decision for that team. Still open — the
+   Caller Tray doesn't yet report `dismissed`/`expired` dispositions at all (only
+   `action_selected` today); see RingCXAgentHubAPI's own contract doc for that follow-up work.
