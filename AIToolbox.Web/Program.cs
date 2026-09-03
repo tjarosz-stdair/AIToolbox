@@ -118,6 +118,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ICallTranscriptWindowStore, CallTranscriptWindowStore>();
 builder.Services.AddSingleton<ICallEntityExtractionQueue, CallEntityExtractionQueue>();
 builder.Services.AddSingleton<IIdentifierCandidateExtractor, RegexIdentifierCandidateExtractor>();
+builder.Services.AddSingleton<P21ValidationCircuitBreaker>();
 builder.Services.AddScoped<IP21IdentifierValidationClient, P21IdentifierValidationClient>();
 builder.Services.AddSingleton<IEntityActionCatalog, StaticEntityActionCatalog>();
 builder.Services.AddScoped<ICallEventNotifier, CallDataApiNotifier>();

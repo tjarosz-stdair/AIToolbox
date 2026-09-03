@@ -10,7 +10,11 @@ namespace AIToolbox.Web.Services.CallEntityExtraction;
 /// <summary>
 /// Calls P21 Toolbox's live MCP facade (POST /api/mcp) directly and deterministically -- not
 /// through the LLM tool-calling loop PicSearchChatService uses. Result parsing lives in
-/// P21ValidationResultMapper; this class owns the network call, caching, and circuit breaker.
+/// P21ValidationResultMapper; this class owns the network call and caching. The circuit breaker
+/// itself lives in P21ValidationCircuitBreaker (injected, singleton) rather than on this class --
+/// this class is registered Scoped (CallEntityExtractionBackgroundService resolves it from a
+/// fresh scope per dequeued call), so counters kept here directly would reset to "healthy" on
+/// every call and the breaker would never actually accumulate failures.
 ///
 /// Requires an McpClientCredential row provisioned (Admin &gt; MCP Client Credentials) for the
 /// "call-entity-extraction" surface, separate from PicSearchChatService's "picsearch" credential
@@ -25,26 +29,25 @@ public sealed class P21IdentifierValidationClient : IP21IdentifierValidationClie
     public const string Surface = "call-entity-extraction";
 
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(12);
-    private const int CircuitBreakerFailureThreshold = 5;
-    private static readonly TimeSpan CircuitBreakerCooldown = TimeSpan.FromSeconds(60);
 
     private readonly IP21McpClientFactory _mcpClientFactory;
     private readonly IMemoryCache _cache;
+    private readonly P21ValidationCircuitBreaker _circuitBreaker;
     private readonly ILogger<P21IdentifierValidationClient> _logger;
-
-    private readonly object _circuitGate = new();
-    private int _consecutiveFailures;
-    private DateTime? _circuitOpenUntilUtc;
 
     public P21IdentifierValidationClient(
         IP21McpClientFactory mcpClientFactory,
         IMemoryCache cache,
+        P21ValidationCircuitBreaker circuitBreaker,
         ILogger<P21IdentifierValidationClient> logger)
     {
         _mcpClientFactory = mcpClientFactory;
         _cache = cache;
+        _circuitBreaker = circuitBreaker;
         _logger = logger;
     }
+
+    public bool IsHealthy => _circuitBreaker.IsHealthy;
 
     public async Task<ValidationResult?> ValidateAsync(IdentifierCandidate candidate, string callId, CancellationToken cancellationToken = default)
     {
@@ -56,19 +59,18 @@ public sealed class P21IdentifierValidationClient : IP21IdentifierValidationClie
             return cached;
         }
 
-        if (IsCircuitOpen())
+        if (_circuitBreaker.IsOpen())
         {
             _logger.LogDebug(
-                "Skipping P21 validation for {CanonicalValue} -- circuit breaker open until {OpenUntilUtc}.",
-                candidate.CanonicalValue,
-                _circuitOpenUntilUtc);
+                "Skipping P21 validation for {CanonicalValue} -- circuit breaker open.",
+                candidate.CanonicalValue);
             return null;
         }
 
         try
         {
             var result = await CallP21Async(toolName, candidate, callId, cancellationToken);
-            RecordSuccess();
+            _circuitBreaker.RecordSuccess();
 
             // Only cache a real outcome -- null (suppressed/not-found/unreachable) shouldn't stick
             // around and block a legitimate re-mention later in the call from trying again.
@@ -85,7 +87,7 @@ public sealed class P21IdentifierValidationClient : IP21IdentifierValidationClie
         }
         catch (Exception ex)
         {
-            RecordFailure();
+            _circuitBreaker.RecordFailure();
             _logger.LogWarning(ex, "P21 validation call failed for {CanonicalValue} via {ToolName}.", candidate.CanonicalValue, toolName);
             return null;
         }
@@ -114,48 +116,5 @@ public sealed class P21IdentifierValidationClient : IP21IdentifierValidationClie
         return toolName == GetWarrantyBySerialTool
             ? MapWarrantyResult(structured, candidate.CanonicalValue)
             : MapModelResolution(structured, candidate.CanonicalValue);
-    }
-
-    private bool IsCircuitOpen()
-    {
-        lock (_circuitGate)
-        {
-            if (_circuitOpenUntilUtc is null)
-            {
-                return false;
-            }
-
-            if (DateTime.UtcNow < _circuitOpenUntilUtc)
-            {
-                return true;
-            }
-
-            // Cooldown elapsed -- let the next call through as a probe; RecordSuccess/RecordFailure
-            // decide whether the circuit re-closes or re-opens.
-            _circuitOpenUntilUtc = null;
-            _consecutiveFailures = 0;
-            return false;
-        }
-    }
-
-    private void RecordSuccess()
-    {
-        lock (_circuitGate)
-        {
-            _consecutiveFailures = 0;
-            _circuitOpenUntilUtc = null;
-        }
-    }
-
-    private void RecordFailure()
-    {
-        lock (_circuitGate)
-        {
-            _consecutiveFailures++;
-            if (_consecutiveFailures >= CircuitBreakerFailureThreshold)
-            {
-                _circuitOpenUntilUtc = DateTime.UtcNow + CircuitBreakerCooldown;
-            }
-        }
     }
 }

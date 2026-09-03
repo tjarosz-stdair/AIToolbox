@@ -12,6 +12,12 @@ uses the Hub's own shared-secret scheme (`X-API-Key`, checked by `ApiKeyMiddlewa
 mechanism protecting every other Hub endpoint), not AI Toolbox's `ApiConsumerKey` scheme. Inbound
 (§2, Call Data API → AI Toolbox) does use AI Toolbox's `ApiConsumerKey` scheme as originally
 described (`X-AIToolbox-Api-Key` header, scopes `calltranscripts:write`/`callevents:disposition`).
+
+**Related boundary, not covered here:** `GET /api/v1/call-pipeline/status`
+(`CallPipelineStatusController`, scope `callpipeline:read`) reports whether this pipeline's P21
+validation is currently healthy (via `P21ValidationCircuitBreaker`), polled every 30s by the
+Hub's `AiToolboxHealthPoller` and used to gate whether the Listener spends Azure Speech budget on
+a call at all. See `RingCXAgentHubAPI/docs/AIToolboxContract.md` §1.3 for the full contract.
 **Source:** extracted from the "Real-Time Call Entity Extraction Pipeline" plan
 (`C:\Users\tjarosz.STDAIR\.claude\plans\i-am-designing-a-zazzy-torvalds.md`), which covers the
 full pipeline this contract is one boundary of — see that plan for how entities are detected and
@@ -187,7 +193,9 @@ this phase.
    currently just logs and moves on (§1). If guaranteed delivery matters more than that, the Call
    Data API team should specify what they need (e.g. an idempotent redelivery window keyed on
    `entityId`) and it can be added without changing the payload shape. Still open.
-3. **Notification expiry.** How long a prompt should stay live in the Caller Tray before the Call
-   Data API reports `disposition: "expired"` is a UX decision for that team. Still open — the
-   Caller Tray doesn't yet report `dismissed`/`expired` dispositions at all (only
-   `action_selected` today); see RingCXAgentHubAPI's own contract doc for that follow-up work.
+3. ~~**Notification expiry.**~~ **Resolved, moot.** The Caller Tray has no per-card dismiss or
+   expiry concept at all — cards accumulate for the life of a call, and past calls stay browsable
+   as history (default 5 retained), never individually cleared. `dismissed`/`expired` remain valid
+   values in `CallEventDispositionController`'s `ValidDispositions` set but are never actually
+   sent by the Hub. Only `action_selected` (tray-initiated) and `delivery_failed`
+   (Hub-self-detected, when a SignalR push finds no connected agent) occur in practice.
