@@ -14,6 +14,75 @@
     </div>
 </div>
 
+<div class="override-layout">
+    <div class="override-panel">
+        <h2 class="h6 text-muted">AI Prompt Testing Overrides</h2>
+        <p class="text-muted small mb-2">
+            Force the ingestion and/or delivery stages to run for an agent whose real opt-in is off,
+            without changing that agent's real experience on live calls. Both overrides
+            auto-expire and are ignored entirely once the agent's real opt-in is on.
+        </p>
+        <div class="override-row">
+            <label class="text-muted small" for="override-agent-key">Agent key</label>
+            <input type="text" id="override-agent-key" placeholder="domain:username" />
+            <button type="button" id="override-check">Check status</button>
+        </div>
+        <div id="override-status" class="text-muted small mb-2">Enter an agent key and check status.</div>
+        <div class="override-controls">
+            <div class="override-control">
+                <strong>Ingestion override</strong>
+                <span class="text-muted small d-block">Runs capture/transcription silently — no card reaches the Tray.</span>
+                <select id="override-ingestion-minutes">
+                    <option value="15">15 min</option>
+                    <option value="30">30 min</option>
+                    <option value="60" selected>60 min</option>
+                    <option value="120">120 min</option>
+                </select>
+                <button type="button" id="override-ingestion-enable">Enable</button>
+                <button type="button" id="override-ingestion-clear">Clear</button>
+            </div>
+            <div class="override-control">
+                <strong>Delivery override</strong>
+                <span class="text-muted small d-block">Additionally lets a generated card reach the Tray.</span>
+                <select id="override-delivery-minutes">
+                    <option value="15">15 min</option>
+                    <option value="30">30 min</option>
+                    <option value="60" selected>60 min</option>
+                    <option value="120">120 min</option>
+                </select>
+                <input type="text" id="override-delivery-mirror" placeholder="Mirror to agent key (optional)" class="form-control form-control-sm mt-1" />
+                <span class="text-muted small d-block mt-1">
+                    Leave blank to deliver to this agent. Set to also (or, while this agent's real
+                    opt-in is off, instead) send the card to a different agent's Tray — e.g. your
+                    own, to watch this agent's calls without opting them in for real. If this
+                    agent's real opt-in is (or becomes) ON, both this agent and the mirror target
+                    get it.
+                </span>
+                <button type="button" id="override-delivery-enable" class="mt-1">Enable</button>
+                <button type="button" id="override-delivery-clear">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="active-overrides-panel">
+        <div class="active-overrides-header">
+            <h2 class="h6 text-muted mb-0">Active Overrides</h2>
+            <div class="active-overrides-header-controls">
+                <select id="active-overrides-interval" title="Auto-refresh interval">
+                    <option value="0">Off</option>
+                    <option value="5000">5s</option>
+                    <option value="10000">10s</option>
+                    <option value="15000">15s</option>
+                    <option value="30000" selected>30s</option>
+                    <option value="60000">60s</option>
+                </select>
+                <button type="button" id="active-overrides-refresh">Refresh</button>
+            </div>
+        </div>
+        <div id="active-overrides-list" class="text-muted small">Loading…</div>
+    </div>
+</div>
+
 <div class="call-monitor-layout">
     <div class="call-monitor-list">
         <h2 class="h6 text-muted">Active calls</h2>
@@ -57,6 +126,137 @@
 </div>
 
 <style>
+    .override-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 1.5rem;
+        align-items: start;
+        margin-bottom: 1.5rem;
+    }
+
+    .override-panel {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+    }
+
+    .active-overrides-panel {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .active-overrides-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+    }
+
+    .active-overrides-header-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .active-overrides-header-controls select,
+    .active-overrides-header-controls button {
+        font-size: 0.8rem;
+    }
+
+    .active-override-row {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.375rem;
+        padding: 0.4rem 0.6rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .active-override-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .active-override-header strong {
+        overflow-wrap: anywhere;
+    }
+
+    .active-override-header button {
+        flex: 0 0 auto;
+        font-size: 0.75rem;
+    }
+
+    .ov-line {
+        display: flex;
+        align-items: baseline;
+        gap: 0.45rem;
+        margin-top: 0.3rem;
+        font-size: 0.8rem;
+    }
+
+    .ov-badge {
+        display: inline-block;
+        flex: 0 0 auto;
+        border-radius: 0.25rem;
+        padding: 0.05rem 0.45rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .ov-badge-on {
+        background-color: #d1e7dd;
+        color: #0f5132;
+    }
+
+    .ov-badge-off {
+        background-color: #e2e3e5;
+        color: #41464b;
+    }
+
+    .ov-expiry {
+        color: var(--bs-secondary-color, #6c757d);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .ov-mirror {
+        margin-top: 0.15rem;
+        margin-left: calc(0.7rem + 0.45rem);
+        font-style: italic;
+        color: var(--bs-secondary-color, #6c757d);
+    }
+
+    .override-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .override-row input[type="text"] {
+        flex: 0 0 260px;
+    }
+
+    .override-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .override-control {
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: 0.375rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .override-control select {
+        margin: 0.4rem 0.4rem 0.4rem 0;
+    }
+
     .call-monitor-layout {
         display: grid;
         grid-template-columns: 280px 1fr;
@@ -352,6 +552,255 @@
             connection.start().catch(function (err) {
                 console.error('Live Call Monitor connection failed to start.', err);
             });
+        })();
+    </script>
+    <script>
+        (function () {
+            const agentKeyEl = document.getElementById('override-agent-key');
+            const statusEl = document.getElementById('override-status');
+            const checkBtn = document.getElementById('override-check');
+            const ingestionMinutesEl = document.getElementById('override-ingestion-minutes');
+            const ingestionEnableBtn = document.getElementById('override-ingestion-enable');
+            const ingestionClearBtn = document.getElementById('override-ingestion-clear');
+            const deliveryMinutesEl = document.getElementById('override-delivery-minutes');
+            const deliveryMirrorEl = document.getElementById('override-delivery-mirror');
+            const deliveryEnableBtn = document.getElementById('override-delivery-enable');
+            const deliveryClearBtn = document.getElementById('override-delivery-clear');
+            const activeOverridesListEl = document.getElementById('active-overrides-list');
+            const activeOverridesRefreshBtn = document.getElementById('active-overrides-refresh');
+            const activeOverridesIntervalEl = document.getElementById('active-overrides-interval');
+
+            function currentAgentKey() {
+                return (agentKeyEl.value || '').trim();
+            }
+
+            function formatExpiry(iso) {
+                if (!iso) {
+                    return '';
+                }
+                const date = new Date(iso);
+                return ' (until ' + date.toISOString().replace('T', ' ').slice(0, 19) + ' UTC)';
+            }
+
+            // Compact "MM/dd HH:mm UTC" for the Active Overrides side panel, where the badge label
+            // ("Ingestion"/"Delivery") already gives context -- the full formatExpiry() wording is
+            // for the single-agent status line above, which has the room for it.
+            function formatExpiryShort(iso) {
+                if (!iso) {
+                    return '';
+                }
+                const date = new Date(iso);
+                const pad = function (n) { return String(n).padStart(2, '0'); };
+                return pad(date.getUTCMonth() + 1) + '/' + pad(date.getUTCDate()) + ' ' +
+                    pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes()) + ' UTC';
+            }
+
+            function renderStatus(settings) {
+                if (!settings) {
+                    statusEl.textContent = 'Unable to reach the Call Data API.';
+                    return;
+                }
+
+                const parts = [
+                    'Real opt-in: ' + (settings.showAiPrompts ? 'ON' : 'OFF'),
+                    'Ingestion override: ' + (settings.ingestionOverrideActive
+                        ? 'active' + formatExpiry(settings.ingestionOverrideExpiresAtUtc)
+                        : 'inactive'),
+                    'Delivery override: ' + (settings.deliveryOverrideActive
+                        ? 'active' + formatExpiry(settings.deliveryOverrideExpiresAtUtc) +
+                          (settings.deliveryMirrorAgentKey ? ' — mirrored to ' + settings.deliveryMirrorAgentKey : '')
+                        : 'inactive')
+                ];
+
+                if (settings.showAiPrompts) {
+                    parts.push(settings.deliveryOverrideActive && settings.deliveryMirrorAgentKey
+                        ? 'Real opt-in is already ON — this agent gets it directly, and ' + settings.deliveryMirrorAgentKey + ' still gets the mirrored copy too.'
+                        : 'Real opt-in is already ON — both overrides are currently redundant; this agent already gets full delivery.');
+                }
+
+                statusEl.textContent = parts.join(' | ');
+            }
+
+            function withAgentKey(action) {
+                const agentKey = currentAgentKey();
+                if (!agentKey) {
+                    statusEl.textContent = 'Enter an agent key first.';
+                    return;
+                }
+                action(agentKey);
+            }
+
+            function checkStatus(agentKey) {
+                statusEl.textContent = 'Checking…';
+                fetch('@Url.Action("GetOverrides", "AdminCallMonitor")?agentKey=' + encodeURIComponent(agentKey))
+                    .then(function (response) { return response.ok ? response.json() : null; })
+                    .then(renderStatus)
+                    .catch(function () { renderStatus(null); });
+            }
+
+            function postOverride(url, agentKey, extraFields) {
+                const body = new URLSearchParams({ agentKey: agentKey });
+                Object.keys(extraFields || {}).forEach(function (key) {
+                    if (extraFields[key] !== undefined && extraFields[key] !== null && extraFields[key] !== '') {
+                        body.set(key, extraFields[key]);
+                    }
+                });
+
+                statusEl.textContent = 'Updating…';
+                fetch(url, { method: 'POST', body: body })
+                    .then(function (response) { return response.ok ? response.json() : null; })
+                    .then(function (settings) {
+                        renderStatus(settings);
+                        refreshActiveOverrides();
+                    })
+                    .catch(function () { renderStatus(null); });
+            }
+
+            function ovBadge(text, on) {
+                const span = document.createElement('span');
+                span.className = 'ov-badge ' + (on ? 'ov-badge-on' : 'ov-badge-off');
+                span.textContent = text;
+                return span;
+            }
+
+            function ovLine(badgeText, badgeOn, expiryText) {
+                const line = document.createElement('div');
+                line.className = 'ov-line';
+                line.appendChild(ovBadge(badgeText, badgeOn));
+                if (expiryText) {
+                    const expiry = document.createElement('span');
+                    expiry.className = 'ov-expiry';
+                    expiry.textContent = 'until ' + expiryText;
+                    line.appendChild(expiry);
+                }
+                return line;
+            }
+
+            function renderActiveOverrides(list) {
+                activeOverridesListEl.innerHTML = '';
+
+                if (!list) {
+                    activeOverridesListEl.textContent = 'Unable to reach the Call Data API.';
+                    return;
+                }
+                if (!list.length) {
+                    activeOverridesListEl.textContent = 'No active overrides.';
+                    return;
+                }
+
+                list.forEach(function (item) {
+                    const row = document.createElement('div');
+                    row.className = 'active-override-row';
+
+                    const header = document.createElement('div');
+                    header.className = 'active-override-header';
+                    const strong = document.createElement('strong');
+                    strong.textContent = item.agentKey;
+                    header.appendChild(strong);
+
+                    const loadBtn = document.createElement('button');
+                    loadBtn.type = 'button';
+                    loadBtn.textContent = 'Edit';
+                    loadBtn.addEventListener('click', function () {
+                        agentKeyEl.value = item.agentKey;
+                        checkStatus(item.agentKey);
+                    });
+                    header.appendChild(loadBtn);
+                    row.appendChild(header);
+
+                    row.appendChild(ovLine('Opt-in ' + (item.showAiPrompts ? 'ON' : 'OFF'), item.showAiPrompts));
+
+                    if (item.ingestionOverrideActive) {
+                        row.appendChild(ovLine('Ingestion', true, formatExpiryShort(item.ingestionOverrideExpiresAtUtc)));
+                    }
+
+                    if (item.deliveryOverrideActive) {
+                        row.appendChild(ovLine('Delivery', true, formatExpiryShort(item.deliveryOverrideExpiresAtUtc)));
+                        if (item.deliveryMirrorAgentKey) {
+                            const mirror = document.createElement('div');
+                            mirror.className = 'ov-mirror';
+                            mirror.textContent = '→ ' + item.deliveryMirrorAgentKey;
+                            row.appendChild(mirror);
+                        }
+                    }
+
+                    activeOverridesListEl.appendChild(row);
+                });
+            }
+
+            function refreshActiveOverrides() {
+                fetch('@Url.Action("GetAllActiveOverrides", "AdminCallMonitor")')
+                    .then(function (response) { return response.ok ? response.json() : null; })
+                    .then(renderActiveOverrides)
+                    .catch(function () { renderActiveOverrides(null); });
+            }
+
+            // Per-viewer preference only (which admin is watching, on which machine) -- not
+            // shared/durable state, so localStorage is the right fit rather than a server setting.
+            const REFRESH_INTERVAL_STORAGE_KEY = 'aitb.adminCallMonitor.activeOverridesRefreshMs';
+            let activeOverridesTimer = null;
+
+            function applyRefreshInterval(ms) {
+                if (activeOverridesTimer !== null) {
+                    clearInterval(activeOverridesTimer);
+                    activeOverridesTimer = null;
+                }
+                if (ms > 0) {
+                    activeOverridesTimer = setInterval(refreshActiveOverrides, ms);
+                }
+                try {
+                    localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(ms));
+                } catch (e) { /* private browsing / storage blocked -- just skip persisting */ }
+            }
+
+            function loadStoredRefreshInterval() {
+                try {
+                    const stored = localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY);
+                    if (stored !== null && activeOverridesIntervalEl.querySelector('option[value="' + stored + '"]')) {
+                        return stored;
+                    }
+                } catch (e) { /* private browsing / storage blocked -- fall back to the default */ }
+                return activeOverridesIntervalEl.value;
+            }
+
+            checkBtn.addEventListener('click', function () { withAgentKey(checkStatus); });
+
+            ingestionEnableBtn.addEventListener('click', function () {
+                withAgentKey(function (agentKey) {
+                    postOverride('@Url.Action("SetIngestionOverride", "AdminCallMonitor")', agentKey, {
+                        expiresInMinutes: ingestionMinutesEl.value
+                    });
+                });
+            });
+            ingestionClearBtn.addEventListener('click', function () {
+                withAgentKey(function (agentKey) {
+                    postOverride('@Url.Action("ClearIngestionOverride", "AdminCallMonitor")', agentKey);
+                });
+            });
+
+            deliveryEnableBtn.addEventListener('click', function () {
+                withAgentKey(function (agentKey) {
+                    postOverride('@Url.Action("SetDeliveryOverride", "AdminCallMonitor")', agentKey, {
+                        expiresInMinutes: deliveryMinutesEl.value,
+                        mirrorToAgentKey: (deliveryMirrorEl.value || '').trim()
+                    });
+                });
+            });
+            deliveryClearBtn.addEventListener('click', function () {
+                withAgentKey(function (agentKey) {
+                    postOverride('@Url.Action("ClearDeliveryOverride", "AdminCallMonitor")', agentKey);
+                    deliveryMirrorEl.value = '';
+                });
+            });
+
+            activeOverridesRefreshBtn.addEventListener('click', refreshActiveOverrides);
+            activeOverridesIntervalEl.addEventListener('change', function () {
+                applyRefreshInterval(Number(activeOverridesIntervalEl.value));
+            });
+
+            refreshActiveOverrides();
+            activeOverridesIntervalEl.value = loadStoredRefreshInterval();
+            applyRefreshInterval(Number(activeOverridesIntervalEl.value));
         })();
     </script>
 }

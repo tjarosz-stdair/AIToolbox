@@ -131,6 +131,7 @@ builder.Services.AddSingleton<P21ValidationCircuitBreaker>();
 builder.Services.AddScoped<IP21IdentifierValidationClient, P21IdentifierValidationClient>();
 builder.Services.AddSingleton<IEntityActionCatalog, StaticEntityActionCatalog>();
 builder.Services.AddScoped<ICallEventNotifier, CallDataApiNotifier>();
+builder.Services.AddScoped<CallDataApiAdminClient>();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<ICallActivityBroadcaster, CallActivityBroadcaster>();
 builder.Services.AddHostedService<CallEntityExtractionBackgroundService>();
