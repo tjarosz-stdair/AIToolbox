@@ -46,6 +46,13 @@ public sealed class ExternalResourcesController : Controller
     public async Task<IActionResult> Create(ExternalResourceFormViewModel model, CancellationToken cancellationToken)
     {
         ValidateTypeSpecificFields(model);
+        // Unlike Edit (where a blank SubscriptionKey legitimately means "keep the existing
+        // secret"), there is no existing secret on Create -- nothing else stops a resource from
+        // being saved with an empty (or, as happened here, accidentally garbled) credential.
+        if (string.IsNullOrWhiteSpace(model.SubscriptionKey))
+        {
+            ModelState.AddModelError(nameof(model.SubscriptionKey), "A subscription key/secret is required.");
+        }
         if (!ModelState.IsValid)
         {
             return View(model);
@@ -129,7 +136,7 @@ public sealed class ExternalResourcesController : Controller
             case ExternalResourceType.CallDataApi:
                 if (string.IsNullOrWhiteSpace(model.BaseUrl) || !Uri.TryCreate(model.BaseUrl, UriKind.Absolute, out _))
                 {
-                    ModelState.AddModelError(nameof(model.BaseUrl), "A valid absolute base URL is required.");
+                    ModelState.AddModelError(nameof(model.BaseUrl), "A valid absolute base URL is required — include the scheme, e.g. https://calldata.example.com.");
                 }
                 break;
         }
@@ -140,7 +147,9 @@ public sealed class ExternalResourcesController : Controller
         var configJson = model.ResourceType switch
         {
             ExternalResourceType.CallDataApi => JsonSerializer.Serialize(new { baseUrl = model.BaseUrl!.Trim() }),
-            _ => JsonSerializer.Serialize(new { region = model.Region.Trim(), language = model.Language.Trim() })
+            // Non-null by this point -- ValidateTypeSpecificFields already rejected a blank
+            // Region/Language for this branch and returned before ToResource is ever called.
+            _ => JsonSerializer.Serialize(new { region = model.Region!.Trim(), language = model.Language!.Trim() })
         };
 
         return new ExternalResource

@@ -22,19 +22,34 @@
 <form method="post" class="tool-surface">
     @Html.AntiForgeryToken()
     <input asp-for="Id" type="hidden" />
-    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    @* The plain-text summary this replaced was easy to miss on a failed save -- the page looks
+       almost identical to before submitting, and the subscription key field below is always
+       empty on reload regardless of success/failure, so a silent-looking failure reads as
+       "nothing happened" rather than "fix these fields." Must be "All", not "ModelOnly" --
+       ValidateTypeSpecificFields (BaseUrl/Region/Language) and DataAnnotations validators both
+       add their errors against a specific field, and ModelOnly summaries deliberately exclude
+       those, showing only whole-form errors (e.g. the duplicate-resource-type check) -- which is
+       exactly why this box rendered with a heading and no content underneath it. *@
+    @if (!ViewContext.ViewData.ModelState.IsValid)
+    {
+        <div class="alert alert-danger">
+            <strong>Not saved — please fix the following:</strong>
+            <div asp-validation-summary="All"></div>
+        </div>
+    }
 
     <div class="form-grid">
         <div class="mb-3">
             <label asp-for="ResourceType" class="form-label"></label>
-            @* Explicit options (not Html.GetEnumSelectList, whose option values are the enum's
-               numeric string form) so the toggle script below can match on the readable name
-               that data-resource-type-field/-help also use. Enum's name-string form still binds
-               correctly on POST via the built-in enum model binder. *@
-            <select asp-for="ResourceType" class="form-select" id="resourceTypeSelect">
-                <option value="@ExternalResourceType.AzureSpeech" selected="@(Model.ResourceType == ExternalResourceType.AzureSpeech)">Azure Speech-to-Text</option>
-                <option value="@ExternalResourceType.CallDataApi" selected="@(Model.ResourceType == ExternalResourceType.CallDataApi)">Call Data API</option>
-            </select>
+            @* asp-items (ExternalResourceFormViewModel.ResourceTypeOptions) rather than
+               hand-written <option selected="@(...)"> markup -- that combination with asp-for was
+               a fragile pattern for round-tripping the selected value through a failed-validation
+               re-render (see ExternalResourcesController.ValidateTypeSpecificFields picking the
+               wrong branch after a post-back). Options are still the enum's name-string form
+               (not Html.GetEnumSelectList's numeric form) so the toggle script below can match on
+               the readable name that data-resource-type-field/-help also use. *@
+            <select asp-for="ResourceType" asp-items="ExternalResourceFormViewModel.ResourceTypeOptions" class="form-select" id="resourceTypeSelect"></select>
             <span asp-validation-for="ResourceType" class="text-danger"></span>
         </div>
 
@@ -82,6 +97,11 @@
             {
                 <div class="form-text">A key is currently stored.</div>
             }
+            <div class="form-text">
+                This field always appears empty when the page (re)loads, whether or not a key is
+                already saved — browsers never redisplay a typed password value. That's not a
+                sign the save failed; check for the error banner above instead.
+            </div>
         </div>
     </div>
 
