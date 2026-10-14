@@ -32,7 +32,8 @@ public sealed class CallActivityBroadcaster : ICallActivityBroadcaster
                 line.Text,
                 line.UtteranceId,
                 line.Sequence,
-                line.CapturedAtUtc
+                line.CapturedAtUtc,
+                line.CallElapsedMs
             }),
             callId);
 

@@ -105,15 +105,15 @@ public sealed class CallTranscriptWindowTests
     public void RecentLines_DropsOldestPastRingBufferLimit()
     {
         var window = new CallTranscriptWindow("call-1");
-        for (var i = 0; i < 60; i++)
+        for (var i = 0; i < 1010; i++)
         {
             window.AppendFinalSegment($"word{i}", $"u-{i}", "External", "acme:jsmith", i, DateTime.UtcNow);
         }
 
         var lines = window.RecentLines();
 
-        Assert.Equal(50, lines.Count);
+        Assert.Equal(1000, lines.Count);
         Assert.Equal("u-10", lines[0].UtteranceId);
-        Assert.Equal("u-59", lines[^1].UtteranceId);
+        Assert.Equal("u-1009", lines[^1].UtteranceId);
     }
 }

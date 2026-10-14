@@ -49,4 +49,40 @@ public sealed class RegexIdentifierCandidateExtractorTests
         Assert.Empty(_extractor.ExtractCandidates(string.Empty));
         Assert.Empty(_extractor.ExtractCandidates("   "));
     }
+
+    [Fact]
+    public void ExtractCandidates_DetectsOrderNumberFromKeyword()
+    {
+        var candidates = _extractor.ExtractCandidates("your order number 45210 has shipped");
+
+        var candidate = Assert.Single(candidates, c => c.TypeGuess == IdentifierTypeGuess.OrderNumber);
+        Assert.Equal("45210", candidate.CanonicalValue);
+    }
+
+    [Fact]
+    public void ExtractCandidates_DetectsJobNameFromKeyword()
+    {
+        var candidates = _extractor.ExtractCandidates("this is for the job Smith Retrofit");
+
+        var candidate = Assert.Single(candidates, c => c.TypeGuess == IdentifierTypeGuess.JobName);
+        Assert.Equal("Smith Retrofit", candidate.CanonicalValue);
+    }
+
+    [Fact]
+    public void ExtractCandidates_PrefersPurchaseOrderOverBareOrderKeyword()
+    {
+        var candidates = _extractor.ExtractCandidates("the purchase order number is 4521 for this shipment");
+
+        var candidate = Assert.Single(candidates, c => c.TypeGuess == IdentifierTypeGuess.PurchaseOrderNumber);
+        Assert.Equal("4521", candidate.CanonicalValue);
+        Assert.DoesNotContain(candidates, c => c.TypeGuess == IdentifierTypeGuess.OrderNumber);
+    }
+
+    [Fact]
+    public void ExtractCandidates_RejectsBareOrderKeywordWithoutNumericValue()
+    {
+        var candidates = _extractor.ExtractCandidates("I'll hold off on it in order to double check with the tech");
+
+        Assert.DoesNotContain(candidates, c => c.TypeGuess == IdentifierTypeGuess.OrderNumber);
+    }
 }

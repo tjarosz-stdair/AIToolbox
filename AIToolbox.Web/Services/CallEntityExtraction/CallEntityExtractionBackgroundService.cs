@@ -89,6 +89,25 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
                 continue;
             }
 
+            if (IsUnvalidatedGuess(candidate.TypeGuess))
+            {
+                _logger.LogInformation(
+                    "Identifier candidate detected (unvalidated): {CanonicalValue} (raw {RawSpokenText}, type {TypeGuess}). Context: {ContextSnippet}",
+                    candidate.CanonicalValue,
+                    candidate.RawSpokenText,
+                    candidate.TypeGuess,
+                    candidate.ContextSnippet);
+
+                var unvalidatedNotification = BuildUnvalidatedNotification(callId, window, candidate);
+
+                // Admin-only for now -- these are unvalidated regex guesses meant to prove the
+                // extraction step works, not (yet) a real Tray prompt for an agent. Unlike the
+                // validated branch below, this deliberately does not call
+                // notifier.NotifyEntityDetectedAsync.
+                await _broadcaster.EntityDetectedAsync(unvalidatedNotification);
+                continue;
+            }
+
             var validation = await validationClient.ValidateAsync(candidate, callId, cancellationToken);
             if (validation is null)
             {
@@ -113,6 +132,54 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
             await notifier.NotifyEntityDetectedAsync(notification, cancellationToken);
             await _broadcaster.EntityDetectedAsync(notification);
         }
+    }
+
+    private static bool IsUnvalidatedGuess(IdentifierTypeGuess guess) => guess is
+        IdentifierTypeGuess.OrderNumber or IdentifierTypeGuess.PurchaseOrderNumber or IdentifierTypeGuess.JobName;
+
+    /// <summary>
+    /// Builds a notification for OrderNumber/PurchaseOrderNumber/JobName candidates, which skip
+    /// P21IdentifierValidationClient/ValidationResult/P21ValidationResultMapper entirely -- there's
+    /// no P21 MCP tool for any of these types yet, so DetectedEntityType is assigned directly from
+    /// the guess rather than mapped from a validation response.
+    /// </summary>
+    private EntityDetectedNotification BuildUnvalidatedNotification(
+        string callId,
+        CallTranscriptWindow window,
+        IdentifierCandidate candidate)
+    {
+        var entityType = candidate.TypeGuess switch
+        {
+            IdentifierTypeGuess.PurchaseOrderNumber => DetectedEntityType.PurchaseOrderNumber,
+            IdentifierTypeGuess.JobName => DetectedEntityType.JobName,
+            _ => DetectedEntityType.OrderNumber
+        };
+
+        return new EntityDetectedNotification
+        {
+            CallId = callId,
+            EntityId = $"ent-{Guid.NewGuid():N}",
+            UtteranceId = window.LastUtteranceId,
+            DetectedAtUtc = DateTime.UtcNow,
+            EntityType = ToWireEntityType(entityType),
+            CanonicalValue = candidate.CanonicalValue,
+            RawSpokenText = candidate.RawSpokenText,
+            Confidence = candidate.Confidence,
+            Validation = new EntityDetectedValidation
+            {
+                Status = "detected",
+                CandidateValues = [],
+                Source = "regex-heuristic"
+            },
+            SourceUtterance = new EntityDetectedSourceUtterance
+            {
+                Text = candidate.ContextSnippet,
+                OffsetStart = candidate.ContextOffsetStart,
+                OffsetEnd = candidate.ContextOffsetStart + candidate.ContextOffsetLength,
+                Side = window.LastSide
+            },
+            Actions = _actionCatalog.GetActions(entityType)
+        };
     }
 
     private EntityDetectedNotification BuildNotification(
@@ -154,6 +221,9 @@ public sealed class CallEntityExtractionBackgroundService : BackgroundService
         {
             DetectedEntityType.SerialNumber => "serial_number",
             DetectedEntityType.PartNumber => "part_number",
+            DetectedEntityType.OrderNumber => "order_number",
+            DetectedEntityType.PurchaseOrderNumber => "purchase_order_number",
+            DetectedEntityType.JobName => "job_name",
             _ => "model_number"
         };
     }

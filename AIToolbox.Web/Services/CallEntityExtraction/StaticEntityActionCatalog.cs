@@ -21,8 +21,17 @@ public sealed class StaticEntityActionCatalog : IEntityActionCatalog
         new ActionDescriptor { ActionId = "check-stock", Label = "Check Stock", RequiresConfirmation = false }
     ];
 
+    // OrderNumber/PurchaseOrderNumber/JobName are unvalidated regex guesses (no P21 round-trip) --
+    // detection-only for now, so no actions until/unless real P21 validation is built for them.
+    private static readonly IReadOnlyList<ActionDescriptor> NoActions = [];
+
     public IReadOnlyList<ActionDescriptor> GetActions(DetectedEntityType entityType)
     {
-        return entityType == DetectedEntityType.PartNumber ? PartActions : ModelOrSerialActions;
+        return entityType switch
+        {
+            DetectedEntityType.PartNumber => PartActions,
+            DetectedEntityType.OrderNumber or DetectedEntityType.PurchaseOrderNumber or DetectedEntityType.JobName => NoActions,
+            _ => ModelOrSerialActions
+        };
     }
 }

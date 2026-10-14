@@ -3,6 +3,16 @@
 @{
     ViewData["Title"] = "Live Call Monitor";
 }
+@functions {
+    // Mirrors the client-side formatDuration() in the script below -- keep the two in sync.
+    private static string FormatDuration(TimeSpan elapsed)
+    {
+        elapsed = elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed;
+        return elapsed.TotalHours >= 1
+            ? elapsed.ToString(@"h\:mm\:ss")
+            : elapsed.ToString(@"m\:ss");
+    }
+}
 
 <div class="page-heading">
     <div>
@@ -95,10 +105,21 @@
             {
                 foreach (var call in Model)
                 {
-                    <button type="button" class="call-row" data-call-id="@call.CallId" data-agent-key="@call.AgentKey">
+                    var duration = FormatDuration((call.EndedAtUtc ?? DateTime.UtcNow) - call.StartedAtUtc);
+                    <button type="button" class="call-row@(call.EndedAtUtc.HasValue ? " ended" : "")" data-call-id="@call.CallId" data-agent-key="@call.AgentKey" data-started-at="@call.StartedAtUtc.ToString("o")">
                         <strong>@(string.IsNullOrWhiteSpace(call.AgentKey) ? "(unknown agent)" : call.AgentKey)</strong>
+                        @if (call.EndedAtUtc.HasValue)
+                        {
+                            <span class="ov-badge ov-badge-off call-ended-badge">Ended</span>
+                        }
                         <span class="text-muted small d-block">@call.CallId</span>
-                        <span class="text-muted small d-block" data-last-activity>@call.LastActivityUtc.ToString("u")</span>
+                        @* data-started-at/data-last-activity carry the raw UTC instant; script hydrates
+                           these labels to the viewer's local time on load -- a plain UTC ISO string here
+                           reads as noise and is easy to miss (it's just "Z"-suffixed digits). *@
+                        <span class="text-muted small d-block">
+                            Started <span data-started-label></span> · <span data-duration>@duration</span>
+                        </span>
+                        <span class="text-muted small d-block" data-last-activity="@call.LastActivityUtc.ToString("o")"></span>
                     </button>
                 }
             }
@@ -110,6 +131,7 @@
 
         <div id="call-detail" hidden>
             <h2 class="h5" id="call-detail-heading"></h2>
+            <div class="text-muted small mb-2" id="call-detail-meta"></div>
 
             <div class="call-monitor-columns">
                 <div>
@@ -291,6 +313,19 @@
         background-color: var(--bs-tertiary-bg, #f8f9fa);
     }
 
+    .call-row.ended {
+        opacity: 0.65;
+    }
+
+    .call-ended-badge {
+        margin-left: 0.4rem;
+    }
+
+    #call-detail-heading .call-ended-badge {
+        margin-left: 0.6rem;
+        vertical-align: middle;
+    }
+
     .call-monitor-detail {
         border: 1px solid var(--bs-border-color, #dee2e6);
         border-radius: 0.5rem;
@@ -314,6 +349,15 @@
 
     .transcript-line {
         margin-bottom: 0.4rem;
+    }
+
+    .transcript-line-time {
+        display: inline-block;
+        min-width: 3rem;
+        font-variant-numeric: tabular-nums;
+        color: var(--bs-secondary-color, #6c757d);
+        font-size: 0.8rem;
+        margin-right: 0.35rem;
     }
 
     .side-badge {
@@ -372,16 +416,66 @@
             const noCallSelectedEl = document.getElementById('no-call-selected');
             const callDetailEl = document.getElementById('call-detail');
             const callDetailHeadingEl = document.getElementById('call-detail-heading');
+            const callDetailMetaEl = document.getElementById('call-detail-meta');
             const transcriptEl = document.getElementById('transcript-lines');
             const entitiesEl = document.getElementById('entity-cards');
 
             let selectedCallId = null;
+            const endedCallIds = new Set();
 
             const entityTypeLabels = {
                 model_number: 'Model Number',
                 serial_number: 'Serial Number',
-                part_number: 'Part Number'
+                part_number: 'Part Number',
+                order_number: 'Order Number',
+                purchase_order_number: 'Purchase Order Number',
+                job_name: 'Job Name'
             };
+
+            // Local time, not UTC -- a raw "...Z"-suffixed UTC instant reads as noise and is easy
+            // to miss entirely (that's exactly what happened before this existed).
+            function formatLocalDateTime(date) {
+                return date.toLocaleString(undefined, {
+                    month: '2-digit', day: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+            }
+
+            function formatDuration(elapsedMs) {
+                const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+                const hours = Math.floor(totalSeconds / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const seconds = totalSeconds % 60;
+                const pad = function (n) { return String(n).padStart(2, '0'); };
+                return hours > 0
+                    ? hours + ':' + pad(minutes) + ':' + pad(seconds)
+                    : minutes + ':' + pad(seconds);
+            }
+
+            // Fills in the local-time labels for a row's raw-UTC data attributes -- used both to
+            // hydrate server-rendered rows on load and (with a fixed "now") to freeze a row's
+            // duration once its call has ended.
+            function hydrateRowTimestamps(row, now) {
+                const startedLabel = row.querySelector('[data-started-label]');
+                if (startedLabel && row.dataset.startedAt) {
+                    startedLabel.textContent = formatLocalDateTime(new Date(row.dataset.startedAt));
+                }
+
+                const lastActivityEl = row.querySelector('[data-last-activity]');
+                if (lastActivityEl) {
+                    const iso = lastActivityEl.getAttribute('data-last-activity');
+                    if (iso) {
+                        lastActivityEl.textContent = 'Last activity ' + formatLocalDateTime(new Date(iso));
+                    }
+                }
+
+                if (!row.classList.contains('ended') && row.dataset.startedAt) {
+                    const durationEl = row.querySelector('[data-duration]');
+                    if (durationEl) {
+                        durationEl.textContent = formatDuration((now || new Date()) - new Date(row.dataset.startedAt));
+                    }
+                }
+            }
 
             function sideBadge(side) {
                 const normalized = (side || '').toLowerCase();
@@ -393,9 +487,17 @@
                 return span;
             }
 
+            function transcriptTimeLabel(callElapsedMs) {
+                const span = document.createElement('span');
+                span.className = 'transcript-line-time';
+                span.textContent = typeof callElapsedMs === 'number' ? '[' + formatDuration(callElapsedMs) + ']' : '';
+                return span;
+            }
+
             function appendTranscriptLine(line) {
                 const row = document.createElement('div');
                 row.className = 'transcript-line';
+                row.appendChild(transcriptTimeLabel(line.callElapsedMs));
                 row.appendChild(sideBadge(line.side));
                 row.appendChild(document.createTextNode(line.text || ''));
                 transcriptEl.appendChild(row);
@@ -431,8 +533,13 @@
                 entitiesEl.prepend(card);
             }
 
-            function upsertActiveCallRow(callId, agentKey) {
-                let row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(callId) + '"]');
+            // Builds or fully rebuilds one active-call row from a plain data object --
+            // { callId, agentKey, startedAtUtc, lastActivityUtc, endedAtUtc }. Used both for a
+            // brand-new call pushed via ActiveCallStarted (endedAtUtc always null there) and for
+            // rebuilding a row from a server snapshot after a SignalR reconnect, where the real
+            // startedAtUtc/endedAtUtc are already known.
+            function buildOrUpdateCallRow(call) {
+                let row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(call.callId) + '"]');
                 const emptyRow = activeCallsEl.querySelector('[data-empty-row]');
                 if (emptyRow) {
                     emptyRow.remove();
@@ -442,46 +549,163 @@
                     row = document.createElement('button');
                     row.type = 'button';
                     row.className = 'call-row';
-                    row.dataset.callId = callId;
-                    row.dataset.agentKey = agentKey || '';
-                    row.addEventListener('click', function () { selectCall(callId); });
+                    row.dataset.callId = call.callId;
+                    row.addEventListener('click', function () { selectCall(call.callId); });
                     activeCallsEl.prepend(row);
                 }
 
+                row.dataset.agentKey = call.agentKey || '';
+                row.dataset.startedAt = call.startedAtUtc;
+                row.classList.toggle('ended', !!call.endedAtUtc);
+                row.classList.toggle('selected', selectedCallId === call.callId);
+
                 row.innerHTML = '';
                 const strong = document.createElement('strong');
-                strong.textContent = agentKey || '(unknown agent)';
-                const callIdLine = document.createElement('span');
-                callIdLine.className = 'text-muted small d-block';
-                callIdLine.textContent = callId;
-                const lastActivity = document.createElement('span');
-                lastActivity.className = 'text-muted small d-block';
-                lastActivity.setAttribute('data-last-activity', '');
-                lastActivity.textContent = new Date().toISOString();
+                strong.textContent = call.agentKey || '(unknown agent)';
                 row.appendChild(strong);
-                row.appendChild(callIdLine);
-                row.appendChild(lastActivity);
-            }
 
-            function removeActiveCallRow(callId) {
-                const row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(callId) + '"]');
-                if (row) {
-                    row.remove();
+                if (call.endedAtUtc) {
+                    endedCallIds.add(call.callId);
+                    row.appendChild(endedBadge());
                 }
 
-                if (!activeCallsEl.querySelector('.call-row')) {
-                    const empty = document.createElement('p');
-                    empty.className = 'text-muted small';
-                    empty.setAttribute('data-empty-row', '');
-                    empty.textContent = activeCallsEl.dataset.emptyText;
-                    activeCallsEl.appendChild(empty);
+                const callIdLine = document.createElement('span');
+                callIdLine.className = 'text-muted small d-block';
+                callIdLine.textContent = call.callId;
+                row.appendChild(callIdLine);
+
+                const startedLine = document.createElement('span');
+                startedLine.className = 'text-muted small d-block';
+                startedLine.appendChild(document.createTextNode('Started '));
+                const startedLabel = document.createElement('span');
+                startedLabel.setAttribute('data-started-label', '');
+                startedLabel.textContent = formatLocalDateTime(new Date(call.startedAtUtc));
+                startedLine.appendChild(startedLabel);
+                startedLine.appendChild(document.createTextNode(' · '));
+                const durationEl = document.createElement('span');
+                durationEl.setAttribute('data-duration', '');
+                const durationEnd = call.endedAtUtc ? new Date(call.endedAtUtc) : new Date();
+                durationEl.textContent = formatDuration(durationEnd - new Date(call.startedAtUtc));
+                startedLine.appendChild(durationEl);
+                row.appendChild(startedLine);
+
+                const lastActivityIso = call.lastActivityUtc || new Date().toISOString();
+                const lastActivity = document.createElement('span');
+                lastActivity.className = 'text-muted small d-block';
+                lastActivity.setAttribute('data-last-activity', lastActivityIso);
+                lastActivity.textContent = 'Last activity ' + formatLocalDateTime(new Date(lastActivityIso));
+                row.appendChild(lastActivity);
+
+                return row;
+            }
+
+            function upsertActiveCallRow(callId, agentKey) {
+                const nowIso = new Date().toISOString();
+                buildOrUpdateCallRow({ callId, agentKey, startedAtUtc: nowIso, lastActivityUtc: nowIso, endedAtUtc: null });
+            }
+
+            // Rebuilds the whole "Active calls" list from a server snapshot -- used after a
+            // SignalR reconnect, since any ActiveCallStarted/CallEnded broadcast that fired while
+            // disconnected is otherwise lost for good (SignalR doesn't replay missed events).
+            function rebuildActiveCallsList(calls) {
+                const currentIds = new Set(calls.map(function (c) { return c.callId; }));
+                activeCallsEl.querySelectorAll('.call-row').forEach(function (row) {
+                    if (!currentIds.has(row.dataset.callId)) {
+                        row.remove();
+                    }
+                });
+
+                if (calls.length === 0) {
+                    if (!activeCallsEl.querySelector('[data-empty-row]')) {
+                        const empty = document.createElement('p');
+                        empty.className = 'text-muted small';
+                        empty.setAttribute('data-empty-row', '');
+                        empty.textContent = activeCallsEl.dataset.emptyText;
+                        activeCallsEl.appendChild(empty);
+                    }
+                    return;
+                }
+
+                calls.forEach(buildOrUpdateCallRow);
+            }
+
+            function endedBadge() {
+                const span = document.createElement('span');
+                span.className = 'ov-badge ov-badge-off call-ended-badge';
+                span.textContent = 'Ended';
+                return span;
+            }
+
+            // Marks a call ended in place -- deliberately does NOT remove the row or close the
+            // detail panel, so an admin already reading a call's transcript keeps it (the whole
+            // point of this signal is "stop looking active", not "disappear").
+            function markActiveCallRowEnded(callId) {
+                endedCallIds.add(callId);
+
+                const row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(callId) + '"]');
+                if (row && !row.classList.contains('ended')) {
+                    // One last duration update with the real end instant, before the 'ended'
+                    // class makes hydrateRowTimestamps/the tick interval stop touching it.
+                    hydrateRowTimestamps(row, new Date());
+                    row.classList.add('ended');
+                    row.querySelector('strong').insertAdjacentElement('afterend', endedBadge());
                 }
 
                 if (selectedCallId === callId) {
-                    callDetailEl.hidden = true;
-                    noCallSelectedEl.hidden = false;
-                    selectedCallId = null;
+                    updateSelectedCallMeta(new Date());
+                    if (!callDetailHeadingEl.querySelector('.call-ended-badge')) {
+                        callDetailHeadingEl.appendChild(endedBadge());
+                    }
                 }
+            }
+
+            // Renders/ticks the "Started ... · duration" line under the detail heading for
+            // whichever call is currently selected. Stops updating (via data-frozen) once that
+            // call's row is marked ended, same as hydrateRowTimestamps stops for the row itself.
+            function updateSelectedCallMeta(now) {
+                if (!selectedCallId) {
+                    return;
+                }
+
+                const row = activeCallsEl.querySelector('[data-call-id="' + CSS.escape(selectedCallId) + '"]');
+                if (!row || !row.dataset.startedAt || callDetailMetaEl.dataset.frozen === 'true') {
+                    return;
+                }
+
+                const started = new Date(row.dataset.startedAt);
+                callDetailMetaEl.textContent =
+                    'Started ' + formatLocalDateTime(started) + ' · ' + formatDuration((now || new Date()) - started);
+
+                if (row.classList.contains('ended')) {
+                    callDetailMetaEl.dataset.frozen = 'true';
+                }
+            }
+
+            // Resets and (re)populates the transcript/entities panels for whichever call is
+            // selected, from a fresh GetSnapshot fetch. Used both for a first-time selection and
+            // to re-sync after a SignalR reconnect (JoinCall's group membership is lost on
+            // reconnect, and anything broadcast while disconnected is gone for good, so this is
+            // the only way to backfill it).
+            function loadCallDetail(callId) {
+                transcriptEl.innerHTML = '';
+                entitiesEl.innerHTML = '';
+                callDetailHeadingEl.textContent = 'Loading…';
+
+                fetch('@Url.Action("GetSnapshot", "AdminCallMonitor", new { callId = "__callId__" })'.replace('__callId__', encodeURIComponent(callId)))
+                    .then(function (response) { return response.json(); })
+                    .then(function (snapshot) {
+                        if (selectedCallId !== callId) {
+                            return;
+                        }
+                        callDetailHeadingEl.textContent = (snapshot.agentKey || '(unknown agent)') + ' — ' + snapshot.callId;
+                        if (endedCallIds.has(callId)) {
+                            callDetailHeadingEl.appendChild(endedBadge());
+                        }
+                        (snapshot.lines || []).forEach(appendTranscriptLine);
+                    })
+                    .catch(function () {
+                        callDetailHeadingEl.textContent = callId;
+                    });
             }
 
             function selectCall(callId) {
@@ -498,43 +722,63 @@
                     row.classList.toggle('selected', row.dataset.callId === callId);
                 });
 
+                delete callDetailMetaEl.dataset.frozen;
+                updateSelectedCallMeta(new Date());
+
                 noCallSelectedEl.hidden = true;
                 callDetailEl.hidden = false;
-                transcriptEl.innerHTML = '';
-                entitiesEl.innerHTML = '';
-                callDetailHeadingEl.textContent = 'Loading…';
 
                 connection.invoke('JoinCall', callId).catch(function () { });
-
-                fetch('@Url.Action("GetSnapshot", "AdminCallMonitor", new { callId = "__callId__" })'.replace('__callId__', encodeURIComponent(callId)))
-                    .then(function (response) { return response.json(); })
-                    .then(function (snapshot) {
-                        if (selectedCallId !== callId) {
-                            return;
-                        }
-                        callDetailHeadingEl.textContent = (snapshot.agentKey || '(unknown agent)') + ' — ' + snapshot.callId;
-                        (snapshot.lines || []).forEach(appendTranscriptLine);
-                    })
-                    .catch(function () {
-                        callDetailHeadingEl.textContent = callId;
-                    });
+                loadCallDetail(callId);
             }
 
             activeCallsEl.querySelectorAll('.call-row').forEach(function (row) {
                 row.addEventListener('click', function () { selectCall(row.dataset.callId); });
+                if (row.classList.contains('ended')) {
+                    endedCallIds.add(row.dataset.callId);
+                }
+                hydrateRowTimestamps(row, new Date());
             });
+
+            // Ticks every active row's duration (and the selected call's meta line) once a
+            // second. Rows/the meta line stop being touched once ended (see hydrateRowTimestamps/
+            // updateSelectedCallMeta) -- this just keeps calling both, cheaply, for everything.
+            setInterval(function () {
+                const now = new Date();
+                activeCallsEl.querySelectorAll('.call-row:not(.ended)').forEach(function (row) {
+                    hydrateRowTimestamps(row, now);
+                });
+                updateSelectedCallMeta(now);
+            }, 1000);
 
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl('/hubs/call-monitor')
                 .withAutomaticReconnect()
                 .build();
 
+            // .withAutomaticReconnect() only restores the transport -- it does NOT restore
+            // per-call SignalR group membership (CallMonitorHub tracks that entirely client-side,
+            // via JoinCall) and any broadcast that fired while disconnected is gone for good.
+            // Mirrors RingCentralCallerTray's SignalR client: just re-invoke whatever
+            // state-establishing calls were made at connect time.
+            connection.onreconnected(function () {
+                fetch('@Url.Action("GetActiveCalls", "AdminCallMonitor")')
+                    .then(function (response) { return response.json(); })
+                    .then(rebuildActiveCallsList)
+                    .catch(function () { });
+
+                if (selectedCallId) {
+                    connection.invoke('JoinCall', selectedCallId).catch(function () { });
+                    loadCallDetail(selectedCallId);
+                }
+            });
+
             connection.on('ActiveCallStarted', function (payload) {
                 upsertActiveCallRow(payload.callId, payload.agentKey);
             });
 
             connection.on('CallEnded', function (payload) {
-                removeActiveCallRow(payload.callId);
+                markActiveCallRowEnded(payload.callId);
             });
 
             connection.on('TranscriptLineAppended', function (payload) {

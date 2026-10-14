@@ -27,6 +27,44 @@ public sealed partial class RegexIdentifierCandidateExtractor : IIdentifierCandi
 
     private static readonly string[] SerialContextWords = ["serial"];
 
+    // OrderNumber/PurchaseOrderNumber/JobName are keyword-triggered only, not shape-matched --
+    // unlike a digit-by-digit spoken identifier, "order 4521" or "job Smith Retrofit" doesn't fit
+    // IsValidRun/IdentifierShapePattern at all (too few tokens, non-numeric words). Lower
+    // confidence than the shape match since there's no structural signal backing it up, only a
+    // keyword. First-pass keyword list/capture width -- no real call transcripts to validate
+    // phrasing against yet; expect to tune both once this is live-tested. Ordered most-specific
+    // first (e.g. "purchase order" before bare "order") so a more specific trigger claims a span
+    // before a broader one gets a chance at it -- see ExtractKeywordTriggeredCandidates.
+    private const double KeywordMatchConfidence = 0.5;
+    private const int MaxLinkingWordsToSkip = 3;
+
+    // RequireNumericLeadValue: Order/PO numbers are expected to actually be numbers, so the value
+    // capture stops at the first token that doesn't look numeric -- this both trims trailing
+    // words a naive "grab N tokens" would sweep in ("order number 45210 has shipped" -> "45210",
+    // not "45210 has") and rejects the common false-positive "in order to ..." (the token right
+    // after "order" isn't numeric, so nothing is captured and the candidate is dropped). Job names
+    // are ordinary words, so they don't get this filter.
+    private static readonly (string[] KeywordTokens, IdentifierTypeGuess Guess, int TokenCaptureCount, bool RequireNumericLeadValue)[] KeywordTriggerGroups =
+    [
+        (["purchase", "order"], IdentifierTypeGuess.PurchaseOrderNumber, 3, true),
+        (["po", "#"], IdentifierTypeGuess.PurchaseOrderNumber, 3, true),
+        (["po"], IdentifierTypeGuess.PurchaseOrderNumber, 3, true),
+        (["order", "number"], IdentifierTypeGuess.OrderNumber, 3, true),
+        (["order"], IdentifierTypeGuess.OrderNumber, 3, true),
+        (["job", "name"], IdentifierTypeGuess.JobName, 4, false),
+        (["job", "number"], IdentifierTypeGuess.JobName, 3, true),
+        (["job"], IdentifierTypeGuess.JobName, 4, false),
+    ];
+
+    // Linking words skipped between a keyword and its value ("order NUMBER IS 4521", "purchase
+    // order NUMBER 8834521") -- "number" is only a linking word here, distinct from its use as
+    // part of the "order number"/"job number" keyword phrases themselves (which are matched as a
+    // whole before this skip ever runs).
+    private static readonly HashSet<string> LinkingWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "is", "was", "are", "number", "of", "#", ":", "-", "the"
+    };
+
     // Common short (<=4 char) English words that would otherwise satisfy the token-shape check.
     // Not exhaustive by design -- it only needs to cover words likely to sit next to a spoken
     // identifier in ordinary call speech, not be a complete stopword corpus.
@@ -85,7 +123,102 @@ public sealed partial class RegexIdentifierCandidateExtractor : IIdentifierCandi
             position += runTokens.Count;
         }
 
+        results.AddRange(ExtractKeywordTriggeredCandidates(windowText, tokens));
+
         return results;
+    }
+
+    /// <summary>
+    /// Independent pass for OrderNumber/PurchaseOrderNumber/JobName -- these don't fit the
+    /// digit-run shape the main loop above looks for, so this scans the same token stream for a
+    /// trigger phrase and captures the tokens immediately following it, verbatim (joined with
+    /// single spaces, not the digit-by-digit concatenation trick). A token span claimed by one
+    /// trigger group can't also be claimed by a later, less-specific one (see KeywordTriggerGroups'
+    /// ordering).
+    /// </summary>
+    private static List<IdentifierCandidate> ExtractKeywordTriggeredCandidates(string windowText, List<Token> tokens)
+    {
+        var results = new List<IdentifierCandidate>();
+        var claimed = new bool[tokens.Count];
+
+        foreach (var (keywordTokens, guess, tokenCaptureCount, requireNumericLeadValue) in KeywordTriggerGroups)
+        {
+            for (var position = 0; position <= tokens.Count - keywordTokens.Length; position++)
+            {
+                if (claimed[position] || !TokensMatchAt(tokens, position, keywordTokens))
+                {
+                    continue;
+                }
+
+                var valueStart = position + keywordTokens.Length;
+                var skipped = 0;
+                while (valueStart < tokens.Count && skipped < MaxLinkingWordsToSkip
+                    && LinkingWords.Contains(tokens[valueStart].Text))
+                {
+                    valueStart++;
+                    skipped++;
+                }
+
+                var valueTokens = new List<Token>();
+                for (var cursor = valueStart; cursor < tokens.Count && valueTokens.Count < tokenCaptureCount; cursor++)
+                {
+                    if (requireNumericLeadValue && !NumericLeadPattern().IsMatch(tokens[cursor].Text))
+                    {
+                        break;
+                    }
+
+                    valueTokens.Add(tokens[cursor]);
+                }
+
+                if (valueTokens.Count == 0)
+                {
+                    continue;
+                }
+
+                var canonicalValue = string.Join(' ', valueTokens.Select(t => t.Text)).Trim();
+                if (canonicalValue.Length < 2)
+                {
+                    continue;
+                }
+
+                var firstToken = tokens[position];
+                var lastToken = valueTokens[^1];
+                var rawSpokenText = windowText[firstToken.Index..(lastToken.Index + lastToken.Length)];
+                var (contextSnippet, contextOffsetStart) = ExtractContext(windowText, firstToken.Index, rawSpokenText.Length);
+
+                results.Add(new IdentifierCandidate
+                {
+                    CanonicalValue = canonicalValue,
+                    RawSpokenText = rawSpokenText,
+                    TypeGuess = guess,
+                    ContextSnippet = contextSnippet,
+                    Confidence = KeywordMatchConfidence,
+                    ContextOffsetStart = contextOffsetStart,
+                    ContextOffsetLength = rawSpokenText.Length
+                });
+
+                var claimEnd = valueStart + valueTokens.Count;
+                for (var i = position; i < claimEnd; i++)
+                {
+                    claimed[i] = true;
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private static bool TokensMatchAt(List<Token> tokens, int position, string[] keywordTokens)
+    {
+        for (var i = 0; i < keywordTokens.Length; i++)
+        {
+            if (!string.Equals(tokens[position + i].Text, keywordTokens[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static (List<Token> RunTokens, string CanonicalValue)? FindLongestValidRunAt(List<Token> tokens, int start)
@@ -156,4 +289,9 @@ public sealed partial class RegexIdentifierCandidateExtractor : IIdentifierCandi
     // Collapsed candidate must mix letters and digits and be a plausible identifier length.
     [GeneratedRegex(@"^(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{5,20}$")]
     private static partial Regex IdentifierShapePattern();
+
+    // A token that looks like (part of) a number -- starts with a digit, otherwise alnum/hyphen.
+    // Used to bound keyword-triggered Order/PO value capture to the actual number.
+    [GeneratedRegex(@"^[0-9][0-9A-Za-z\-]*$")]
+    private static partial Regex NumericLeadPattern();
 }

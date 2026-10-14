@@ -38,7 +38,7 @@ public sealed class CallTranscriptIngestController : ControllerBase
     [HttpPost("segments")]
     public async Task<IActionResult> PostSegment([FromBody] TranscriptSegmentRequest request, CancellationToken cancellationToken)
     {
-        if (!User.IsApiConsumer() || !User.HasApiScope("calltranscripts:write"))
+        if (!User.IsApiConsumer() || !User.HasApiScope(KnownApiScopes.CallTranscriptsWrite))
         {
             return Forbid();
         }
@@ -62,10 +62,11 @@ public sealed class CallTranscriptIngestController : ControllerBase
             await _broadcaster.ActiveCallStartedAsync(request.CallId, window.AgentKey);
         }
 
+        var callElapsedMs = Math.Max(0, (request.CapturedAtUtc - window.StartedAtUtc).TotalMilliseconds);
         await _broadcaster.TranscriptLineAppendedAsync(
             request.CallId,
             window.AgentKey,
-            new TranscriptLine(utteranceId, request.Side, request.Text, request.Sequence, request.CapturedAtUtc));
+            new TranscriptLine(utteranceId, request.Side, request.Text, request.Sequence, request.CapturedAtUtc, callElapsedMs));
 
         try
         {
@@ -82,6 +83,32 @@ public sealed class CallTranscriptIngestController : ControllerBase
             // on the next segment's signal instead of immediately.
             _logger.LogError(ex, "Failed to queue call {CallId} for entity extraction.", request.CallId);
         }
+
+        return Accepted();
+    }
+
+    /// <summary>
+    /// Listener -> Hub -> us, fired once the gRPC stream for this call closes -- the only real
+    /// end-of-call signal this pipeline has (previously there was none; a call only stopped
+    /// looking "active" once CallTranscriptWindowIdleCleanupService's 30-minute idle sweep caught
+    /// up to it). Marks the window ended rather than removing it, so an admin already viewing the
+    /// call keeps its transcript.
+    /// </summary>
+    [HttpPost("{callId}/end")]
+    public async Task<IActionResult> PostCallEnded(string callId)
+    {
+        if (!User.IsApiConsumer() || !User.HasApiScope(KnownApiScopes.CallTranscriptsWrite))
+        {
+            return Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(callId))
+        {
+            return BadRequest(new { error = "callId is required." });
+        }
+
+        _windows.MarkEnded(callId);
+        await _broadcaster.CallEndedAsync(callId);
 
         return Accepted();
     }

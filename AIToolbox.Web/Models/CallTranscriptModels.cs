@@ -31,21 +31,35 @@ public sealed class TranscriptSegmentRequest
 /// (see ValidationResult.DetectedEntityType). "serial" is a distinct guess based on nearby context
 /// words ("serial", "serial number"), never corpus-matched (see the fast-matching design notes)
 /// since P21's serial history only covers its own ~10-year retention window.
+///
+/// OrderNumber/PurchaseOrderNumber/JobName are a different kind of guess: keyword-triggered only
+/// (no P21 MCP tool exists for any of these yet), and they deliberately skip P21 validation
+/// entirely -- CallEntityExtractionBackgroundService broadcasts them straight from the guess, with
+/// no ValidationResult/DetectedEntityType mapping step. See that class for the branch.
 /// </summary>
 public enum IdentifierTypeGuess
 {
     ModelOrPart,
-    Serial
+    Serial,
+    OrderNumber,
+    PurchaseOrderNumber,
+    JobName
 }
 
-/// <summary>The concrete entity type a candidate resolved to, known only after P21 validation
-/// (see ValidationResult.DetectedEntityType) -- drives both the outbound EntityType wire value and
-/// which actions IEntityActionCatalog offers (Part Number never gets "Open in PIC Search").</summary>
+/// <summary>The concrete entity type a candidate resolved to. For ModelNumber/SerialNumber/
+/// PartNumber, this is known only after P21 validation (see ValidationResult.DetectedEntityType).
+/// OrderNumber/PurchaseOrderNumber/JobName never go through P21 validation -- they're assigned
+/// directly from the matching IdentifierTypeGuess (see CallEntityExtractionBackgroundService).
+/// Drives both the outbound EntityType wire value and which actions IEntityActionCatalog offers
+/// (Part Number never gets "Open in PIC Search"; the three unvalidated types get none).</summary>
 public enum DetectedEntityType
 {
     ModelNumber,
     SerialNumber,
-    PartNumber
+    PartNumber,
+    OrderNumber,
+    PurchaseOrderNumber,
+    JobName
 }
 
 public sealed class IdentifierCandidate

@@ -29,6 +29,17 @@ public sealed class AdminCallMonitorController : Controller
     }
 
     /// <summary>
+    /// Same data as Index()'s server-rendered model, as JSON -- lets the client re-sync the
+    /// active-calls list after a SignalR reconnect (any ActiveCallStarted/CallEnded broadcast that
+    /// fired while disconnected is otherwise lost for good; SignalR doesn't replay missed events).
+    /// </summary>
+    [HttpGet("active-calls")]
+    public IActionResult GetActiveCalls()
+    {
+        return Json(_windows.ListActive());
+    }
+
+    /// <summary>
     /// Initial snapshot for a call the admin just selected -- SignalR only delivers events from
     /// the moment of joining the group forward, so this fills in whatever already happened.
     /// </summary>
