@@ -25,7 +25,7 @@ public sealed class BatchesController : ControllerBase
     [RequestSizeLimit(100 * 1024 * 1024)]
     public async Task<IActionResult> Create([FromBody] CreateAiBatchJobRequest request, CancellationToken cancellationToken)
     {
-        if (!HasScope("batch:write") || !HasScope($"tool:{request.ToolKey}"))
+        if (!HasScope(KnownApiScopes.BatchWrite) || !HasScope($"tool:{request.ToolKey}"))
         {
             return Forbid();
         }
@@ -50,7 +50,7 @@ public sealed class BatchesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        if (!HasScope("batch:read"))
+        if (!HasScope(KnownApiScopes.BatchRead))
         {
             return Forbid();
         }
@@ -65,7 +65,7 @@ public sealed class BatchesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Get(int id, CancellationToken cancellationToken)
     {
-        if (!HasScope("batch:read"))
+        if (!HasScope(KnownApiScopes.BatchRead))
         {
             return Forbid();
         }
@@ -82,7 +82,7 @@ public sealed class BatchesController : ControllerBase
     [HttpGet("{id:int}/requests")]
     public async Task<IActionResult> Requests(int id, CancellationToken cancellationToken)
     {
-        if (!HasScope("batch:read"))
+        if (!HasScope(KnownApiScopes.BatchRead))
         {
             return Forbid();
         }
@@ -99,7 +99,7 @@ public sealed class BatchesController : ControllerBase
     [HttpGet("{id:int}/results")]
     public async Task<IActionResult> Results(int id, CancellationToken cancellationToken)
     {
-        if (!HasScope("batch:read"))
+        if (!HasScope(KnownApiScopes.BatchRead))
         {
             return Forbid();
         }
@@ -118,7 +118,7 @@ public sealed class BatchesController : ControllerBase
     [HttpPost("{id:int}/cancel")]
     public async Task<IActionResult> Cancel(int id, CancellationToken cancellationToken)
     {
-        if (!HasScope("batch:cancel"))
+        if (!HasScope(KnownApiScopes.BatchCancel))
         {
             return Forbid();
         }

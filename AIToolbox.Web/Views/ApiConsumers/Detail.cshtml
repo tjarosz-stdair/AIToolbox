@@ -51,7 +51,23 @@
             <div class="mb-3">
                 <label class="form-label" for="Scopes">Scopes</label>
                 <input id="Scopes" name="Scopes" value="@Model.NewKey.Scopes" class="form-control" />
-                <div class="form-text">Space, comma, or line separated scopes.</div>
+                <div class="form-text">Space, comma, or line separated scopes. Click a scope below to add it.</div>
+                <div class="scope-picker mt-2">
+                    @foreach (var scope in Model.AvailableScopes)
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm scope-chip" data-scope="@scope.Value" title="@scope.Description">@scope.Value</button>
+                    }
+                </div>
+                <details class="scope-legend mt-2">
+                    <summary class="text-muted small">What does each scope grant?</summary>
+                    <dl class="scope-legend-list mb-0">
+                        @foreach (var scope in Model.AvailableScopes)
+                        {
+                            <dt>@scope.Value</dt>
+                            <dd>@scope.Description</dd>
+                        }
+                    </dl>
+                </details>
             </div>
             <div class="mb-3">
                 <label class="form-label" for="ExpiresUtc">Expires UTC</label>
@@ -96,3 +112,85 @@
         </div>
     </div>
 </div>
+
+<style>
+    .scope-picker {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    .scope-chip {
+        font-family: var(--bs-font-monospace, monospace);
+        font-size: 0.75rem;
+    }
+
+    .scope-chip.added {
+        background-color: var(--bs-success, #198754);
+        color: #fff;
+        border-color: var(--bs-success, #198754);
+    }
+
+    .scope-legend summary {
+        cursor: pointer;
+    }
+
+    .scope-legend-list {
+        margin-top: 0.5rem;
+        margin-left: 0.25rem;
+    }
+
+    .scope-legend-list dt {
+        font-family: var(--bs-font-monospace, monospace);
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-top: 0.5rem;
+    }
+
+    .scope-legend-list dd {
+        color: var(--bs-secondary-color, #6c757d);
+        font-size: 0.8rem;
+        margin-left: 0;
+        margin-bottom: 0;
+    }
+</style>
+
+@section Scripts {
+    <script>
+        (function () {
+            const scopesInput = document.getElementById('Scopes');
+
+            // Same delimiter set ApiConsumersController.ParseScopes splits on server-side --
+            // keeps the dedupe check here consistent with what actually gets saved.
+            function currentScopes() {
+                return (scopesInput.value || '')
+                    .split(/[\s,;]+/)
+                    .filter(function (s) { return s.length > 0; });
+            }
+
+            function refreshChipState() {
+                const existing = currentScopes().map(function (s) { return s.toLowerCase(); });
+                document.querySelectorAll('.scope-chip').forEach(function (button) {
+                    button.classList.toggle('added', existing.includes(button.dataset.scope.toLowerCase()));
+                });
+            }
+
+            document.querySelectorAll('.scope-chip').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const scope = button.dataset.scope;
+                    const existing = currentScopes();
+
+                    if (!existing.some(function (s) { return s.toLowerCase() === scope.toLowerCase(); })) {
+                        existing.push(scope);
+                        scopesInput.value = existing.join(' ');
+                    }
+
+                    refreshChipState();
+                });
+            });
+
+            scopesInput.addEventListener('input', refreshChipState);
+            refreshChipState();
+        })();
+    </script>
+}

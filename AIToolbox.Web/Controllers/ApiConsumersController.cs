@@ -14,11 +14,31 @@ public sealed class ApiConsumersController : Controller
 {
     private readonly IApiConsumerRepository _consumers;
     private readonly IApiKeyService _apiKeys;
+    private readonly IPlatformRepository _platform;
 
-    public ApiConsumersController(IApiConsumerRepository consumers, IApiKeyService apiKeys)
+    public ApiConsumersController(IApiConsumerRepository consumers, IApiKeyService apiKeys, IPlatformRepository platform)
     {
         _consumers = consumers;
         _apiKeys = apiKeys;
+        _platform = platform;
+    }
+
+    /// <summary>KnownApiScopes.All plus a "tool:{ToolKey}" definition for every registered tool
+    /// (described from the tool's own DisplayName/Description, so a new tool's scope shows up in
+    /// the legend automatically) -- backs the new-key form's "add scope" quick-picker/legend (see
+    /// AvailableScopes on the view model).</summary>
+    private async Task<IReadOnlyList<ScopeDefinition>> GetAvailableScopesAsync(CancellationToken cancellationToken)
+    {
+        var tools = await _platform.GetToolsAsync(cancellationToken);
+        return
+        [
+            .. KnownApiScopes.All,
+            .. tools.Select(t => new ScopeDefinition(
+                $"tool:{t.ToolKey}",
+                string.IsNullOrWhiteSpace(t.Description)
+                    ? $"Grants access to the \"{t.DisplayName}\" tool."
+                    : $"Grants access to the \"{t.DisplayName}\" tool -- {t.Description}"))
+        ];
     }
 
     [HttpGet("")]
@@ -55,7 +75,8 @@ public sealed class ApiConsumersController : Controller
             : View(new ApiConsumerDetailViewModel
             {
                 Consumer = consumer,
-                NewKey = new ApiConsumerKeyFormViewModel { ApiConsumerId = id }
+                NewKey = new ApiConsumerKeyFormViewModel { ApiConsumerId = id },
+                AvailableScopes = await GetAvailableScopesAsync(cancellationToken)
             });
     }
 
@@ -73,7 +94,8 @@ public sealed class ApiConsumersController : Controller
             return View(nameof(Detail), new ApiConsumerDetailViewModel
             {
                 Consumer = ToConsumer(model),
-                NewKey = new ApiConsumerKeyFormViewModel { ApiConsumerId = id }
+                NewKey = new ApiConsumerKeyFormViewModel { ApiConsumerId = id },
+                AvailableScopes = await GetAvailableScopesAsync(cancellationToken)
             });
         }
 
@@ -98,7 +120,12 @@ public sealed class ApiConsumersController : Controller
 
         if (!ModelState.IsValid)
         {
-            return View(nameof(Detail), new ApiConsumerDetailViewModel { Consumer = consumer, NewKey = model });
+            return View(nameof(Detail), new ApiConsumerDetailViewModel
+            {
+                Consumer = consumer,
+                NewKey = model,
+                AvailableScopes = await GetAvailableScopesAsync(cancellationToken)
+            });
         }
 
         var rawKey = _apiKeys.GenerateRawKey();

@@ -37,7 +37,7 @@ public sealed class CallEventDispositionController : ControllerBase
     [HttpPost("{entityId}/disposition")]
     public async Task<IActionResult> PostDisposition(string entityId, [FromBody] CallEventDispositionRequest request, CancellationToken cancellationToken)
     {
-        if (!User.IsApiConsumer() || !User.HasApiScope("callevents:disposition"))
+        if (!User.IsApiConsumer() || !User.HasApiScope(KnownApiScopes.CallEventsDisposition))
         {
             return Forbid();
         }

@@ -330,8 +330,8 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAssertion(context =>
             context.User.IsInRole("Admin")
             || !context.User.IsApiConsumer()
-            || context.User.HasApiScope("batch:read")
-            || context.User.HasApiScope("batch:write"));
+            || context.User.HasApiScope(KnownApiScopes.BatchRead)
+            || context.User.HasApiScope(KnownApiScopes.BatchWrite));
     });
 });
 

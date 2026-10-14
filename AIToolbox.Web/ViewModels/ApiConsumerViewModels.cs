@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using AIToolbox.Web.Models;
+using AIToolbox.Web.Security;
 
 namespace AIToolbox.Web.ViewModels;
 
@@ -26,6 +27,13 @@ public sealed class ApiConsumerDetailViewModel
 {
     public required ApiConsumer Consumer { get; set; }
     public ApiConsumerKeyFormViewModel NewKey { get; set; } = new();
+
+    /// <summary>Every valid scope + a description of what it grants, for the "add scope"
+    /// quick-picker/legend on the new-key form -- KnownApiScopes.All plus "tool:{ToolKey}" for
+    /// each registered tool. Free-text entry in the Scopes field is still allowed (a scope for a
+    /// tool added after this list was built, e.g.), this just makes the common case
+    /// click-to-add-with-an-explanation instead of hand-typed and undocumented.</summary>
+    public IReadOnlyList<ScopeDefinition> AvailableScopes { get; set; } = [];
 }
 
 public sealed class ApiConsumerKeyFormViewModel

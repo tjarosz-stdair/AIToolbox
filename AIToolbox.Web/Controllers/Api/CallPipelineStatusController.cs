@@ -34,7 +34,7 @@ public sealed class CallPipelineStatusController : ControllerBase
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus(CancellationToken cancellationToken)
     {
-        if (!User.IsApiConsumer() || !User.HasApiScope("callpipeline:read"))
+        if (!User.IsApiConsumer() || !User.HasApiScope(KnownApiScopes.CallPipelineRead))
         {
             return Forbid();
         }
