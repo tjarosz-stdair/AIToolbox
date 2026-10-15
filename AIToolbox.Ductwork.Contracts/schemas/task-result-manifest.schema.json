@@ -1,8 +1,5 @@
 {
-  "type": [
-    "object",
-    "null"
-  ],
+  "type": "object",
   "properties": {
     "contractVersion": {
       "type": "string"
@@ -25,19 +22,15 @@
         },
         "directiveSnapshotId": {
           "type": [
-            "string",
             "integer",
             "null"
-          ],
-          "pattern": "^-?(?:0|[1-9]\\d*)$"
+          ]
         },
         "providerSnapshotId": {
           "type": [
-            "string",
             "integer",
             "null"
-          ],
-          "pattern": "^-?(?:0|[1-9]\\d*)$"
+          ]
         },
         "algorithmName": {
           "type": [
@@ -66,15 +59,13 @@
       },
       "required": [
         "kind"
-      ]
+      ],
+      "additionalProperties": false
     },
     "detections": {
       "type": "array",
       "items": {
-        "type": [
-          "object",
-          "null"
-        ],
+        "type": "object",
         "properties": {
           "detectionId": {
             "type": "string"
@@ -101,11 +92,7 @@
             ]
           },
           "quantity": {
-            "type": [
-              "string",
-              "number"
-            ],
-            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+            "type": "number"
           },
           "unit": {
             "enum": [
@@ -135,11 +122,7 @@
             ]
           },
           "confidence": {
-            "type": [
-              "string",
-              "number"
-            ],
-            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+            "type": "number"
           },
           "buildingType": {
             "type": [
@@ -160,53 +143,25 @@
             ],
             "properties": {
               "x0": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               },
               "y0": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               },
               "x1": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               },
               "y1": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               },
               "width": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               },
               "height": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               },
               "area": {
-                "type": [
-                  "string",
-                  "number"
-                ],
-                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+                "type": "number"
               }
             },
             "required": [
@@ -214,7 +169,8 @@
               "y0",
               "x1",
               "y1"
-            ]
+            ],
+            "additionalProperties": false
           },
           "evidence": {
             "type": [
@@ -230,16 +186,14 @@
           "method",
           "family",
           "confidence"
-        ]
+        ],
+        "additionalProperties": false
       }
     },
     "findings": {
       "type": "array",
       "items": {
-        "type": [
-          "object",
-          "null"
-        ],
+        "type": "object",
         "properties": {
           "findingId": {
             "type": "string"
@@ -261,10 +215,7 @@
           "candidates": {
             "type": "array",
             "items": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           "detectionId": {
@@ -284,7 +235,8 @@
           "findingId",
           "kind",
           "question"
-        ]
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -293,5 +245,6 @@
     "taskType",
     "taskPublicId",
     "producer"
-  ]
+  ],
+  "additionalProperties": false
 }

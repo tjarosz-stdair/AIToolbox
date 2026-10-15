@@ -116,6 +116,23 @@ public sealed class DatabaseInitializer
             ALTER TABLE dbo.AiProviders ADD MaxOutputTokens INT NULL;
         END;
 
+        IF COL_LENGTH('dbo.AiProviders', 'SupportsVision') IS NULL
+        BEGIN
+            ALTER TABLE dbo.AiProviders
+                ADD SupportsVision BIT NOT NULL CONSTRAINT DF_AiProviders_SupportsVision DEFAULT(0);
+        END;
+
+        IF COL_LENGTH('dbo.AiProviders', 'AllowedForDuctwork') IS NULL
+        BEGIN
+            ALTER TABLE dbo.AiProviders
+                ADD AllowedForDuctwork BIT NOT NULL CONSTRAINT DF_AiProviders_AllowedForDuctwork DEFAULT(0);
+        END;
+
+        IF COL_LENGTH('dbo.AiProviders', 'GovernanceRoute') IS NULL
+        BEGIN
+            ALTER TABLE dbo.AiProviders ADD GovernanceRoute NVARCHAR(100) NULL;
+        END;
+
         IF OBJECT_ID('dbo.EventLogs', 'U') IS NULL
         BEGIN
             CREATE TABLE dbo.EventLogs

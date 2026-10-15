@@ -20,4 +20,8 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\AIToolbox.Ductwork.Core\AIToolbox.Ductwork.Core.csproj" />
+  </ItemGroup>
+
 </Project>

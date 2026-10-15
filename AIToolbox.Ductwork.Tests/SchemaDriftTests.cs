@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Schema;
-using System.Text.Json.Serialization;
 using AIToolbox.Ductwork.Contracts;
 
 namespace AIToolbox.Ductwork.Tests;
@@ -14,11 +12,7 @@ namespace AIToolbox.Ductwork.Tests;
 /// </summary>
 public class SchemaDriftTests
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() }
-    };
+    private static readonly JsonSerializerOptions Options = ContractJson.IndentedOptions;
 
     private static readonly (string File, Type Type)[] Schemas =
     [
@@ -34,7 +28,7 @@ public class SchemaDriftTests
 
         foreach (var (file, type) in Schemas)
         {
-            var generated = Normalize(JsonSchemaExporter.GetJsonSchemaAsNode(Options, type).ToJsonString(Options));
+            var generated = Normalize(ContractJson.GenerateSchema(type).ToJsonString(Options));
             var path = Path.Combine(dir, file);
 
             if (update)

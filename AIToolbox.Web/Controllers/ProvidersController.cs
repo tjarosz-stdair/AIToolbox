@@ -49,6 +49,9 @@ public sealed class ProvidersController : Controller
                 provider.MaxOutputTokens,
                 provider.RequestTimeoutSeconds,
                 provider.IsEnabled,
+                provider.SupportsVision,
+                provider.AllowedForDuctwork,
+                provider.GovernanceRoute,
                 ApiKeyConfigured = !string.IsNullOrWhiteSpace(provider.ApiKeyCipherText),
                 provider.ApiKeyLastUpdatedUtc
             })
@@ -158,7 +161,10 @@ public sealed class ProvidersController : Controller
             ExtraHeadersJson = model.ExtraHeadersJson,
             MaxOutputTokens = model.MaxOutputTokens,
             RequestTimeoutSeconds = model.RequestTimeoutSeconds,
-            IsEnabled = model.IsEnabled
+            IsEnabled = model.IsEnabled,
+            SupportsVision = model.SupportsVision,
+            AllowedForDuctwork = model.AllowedForDuctwork,
+            GovernanceRoute = string.IsNullOrWhiteSpace(model.GovernanceRoute) ? null : model.GovernanceRoute.Trim()
         };
     }
 
@@ -176,6 +182,9 @@ public sealed class ProvidersController : Controller
             MaxOutputTokens = provider.MaxOutputTokens,
             RequestTimeoutSeconds = provider.RequestTimeoutSeconds,
             IsEnabled = provider.IsEnabled,
+            SupportsVision = provider.SupportsVision,
+            AllowedForDuctwork = provider.AllowedForDuctwork,
+            GovernanceRoute = provider.GovernanceRoute,
             HasStoredApiKey = !string.IsNullOrWhiteSpace(provider.ApiKeyCipherText)
         };
     }

@@ -22,7 +22,7 @@ public sealed class AiProviderRepository : IAiProviderRepository
         command.CommandText = $"""
             SELECT Id, DisplayName, ProviderType, EndpointUrl, ModelName, ApiVersion,
                    ApiKeyCipherText, ApiKeyLastUpdatedUtc, ExtraHeadersJson, MaxOutputTokens, RequestTimeoutSeconds,
-                   IsEnabled, CreatedUtc, UpdatedUtc
+                   IsEnabled, SupportsVision, AllowedForDuctwork, GovernanceRoute, CreatedUtc, UpdatedUtc
             FROM dbo.AiProviders
             {(includeDisabled ? string.Empty : "WHERE IsEnabled = 1")}
             ORDER BY DisplayName;
@@ -58,7 +58,7 @@ public sealed class AiProviderRepository : IAiProviderRepository
         command.CommandText = """
             SELECT Id, DisplayName, ProviderType, EndpointUrl, ModelName, ApiVersion,
                    ApiKeyCipherText, ApiKeyLastUpdatedUtc, ExtraHeadersJson, MaxOutputTokens, RequestTimeoutSeconds,
-                   IsEnabled, CreatedUtc, UpdatedUtc
+                   IsEnabled, SupportsVision, AllowedForDuctwork, GovernanceRoute, CreatedUtc, UpdatedUtc
             FROM dbo.AiProviders
             WHERE Id = @Id;
             """;
@@ -75,11 +75,13 @@ public sealed class AiProviderRepository : IAiProviderRepository
         command.CommandText = """
             INSERT INTO dbo.AiProviders
                 (DisplayName, ProviderType, EndpointUrl, ModelName, ApiVersion, ApiKeyCipherText,
-                 ApiKeyLastUpdatedUtc, ExtraHeadersJson, MaxOutputTokens, RequestTimeoutSeconds, IsEnabled, CreatedUtc, UpdatedUtc)
+                 ApiKeyLastUpdatedUtc, ExtraHeadersJson, MaxOutputTokens, RequestTimeoutSeconds, IsEnabled,
+                 SupportsVision, AllowedForDuctwork, GovernanceRoute, CreatedUtc, UpdatedUtc)
             OUTPUT INSERTED.Id
             VALUES
                 (@DisplayName, @ProviderType, @EndpointUrl, @ModelName, @ApiVersion, @ApiKeyCipherText,
                  @ApiKeyLastUpdatedUtc, @ExtraHeadersJson, @MaxOutputTokens, @RequestTimeoutSeconds, @IsEnabled,
+                 @SupportsVision, @AllowedForDuctwork, @GovernanceRoute,
                  SYSUTCDATETIME(), SYSUTCDATETIME());
             """;
         AddProviderParameters(command, provider, updateSecret: true);
@@ -107,6 +109,9 @@ public sealed class AiProviderRepository : IAiProviderRepository
                   MaxOutputTokens = @MaxOutputTokens,
                   RequestTimeoutSeconds = @RequestTimeoutSeconds,
                   IsEnabled = @IsEnabled,
+                  SupportsVision = @SupportsVision,
+                  AllowedForDuctwork = @AllowedForDuctwork,
+                  GovernanceRoute = @GovernanceRoute,
                   UpdatedUtc = SYSUTCDATETIME()
               WHERE Id = @Id;
               """
@@ -121,6 +126,9 @@ public sealed class AiProviderRepository : IAiProviderRepository
                   MaxOutputTokens = @MaxOutputTokens,
                   RequestTimeoutSeconds = @RequestTimeoutSeconds,
                   IsEnabled = @IsEnabled,
+                  SupportsVision = @SupportsVision,
+                  AllowedForDuctwork = @AllowedForDuctwork,
+                  GovernanceRoute = @GovernanceRoute,
                   UpdatedUtc = SYSUTCDATETIME()
               WHERE Id = @Id;
               """;
@@ -141,6 +149,9 @@ public sealed class AiProviderRepository : IAiProviderRepository
         command.Parameters.AddWithValue("@MaxOutputTokens", (object?)provider.MaxOutputTokens ?? DBNull.Value);
         command.Parameters.AddWithValue("@RequestTimeoutSeconds", provider.RequestTimeoutSeconds);
         command.Parameters.AddWithValue("@IsEnabled", provider.IsEnabled);
+        command.Parameters.AddWithValue("@SupportsVision", provider.SupportsVision);
+        command.Parameters.AddWithValue("@AllowedForDuctwork", provider.AllowedForDuctwork);
+        command.Parameters.AddWithValue("@GovernanceRoute", (object?)provider.GovernanceRoute?.Trim() ?? DBNull.Value);
 
         if (updateSecret)
         {
@@ -171,6 +182,9 @@ public sealed class AiProviderRepository : IAiProviderRepository
             MaxOutputTokens = reader["MaxOutputTokens"] is DBNull ? null : reader.GetRequiredInt32("MaxOutputTokens"),
             RequestTimeoutSeconds = reader.GetRequiredInt32("RequestTimeoutSeconds"),
             IsEnabled = reader.GetRequiredBoolean("IsEnabled"),
+            SupportsVision = reader.GetRequiredBoolean("SupportsVision"),
+            AllowedForDuctwork = reader.GetRequiredBoolean("AllowedForDuctwork"),
+            GovernanceRoute = reader.GetNullableString("GovernanceRoute"),
             CreatedUtc = reader.GetRequiredDateTime("CreatedUtc"),
             UpdatedUtc = reader.GetRequiredDateTime("UpdatedUtc")
         };

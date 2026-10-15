@@ -64,6 +64,13 @@
             <div class="form-text">Leave blank to use the provider default. If responses end early, raise this value.</div>
         </div>
 
+        <div class="mb-3">
+            <label asp-for="GovernanceRoute" class="form-label"></label>
+            <input asp-for="GovernanceRoute" class="form-control" placeholder="Microsoft Foundry" />
+            <span asp-validation-for="GovernanceRoute" class="text-danger"></span>
+            <div class="form-text">Where requests are routed for data governance. Vision-capable and document-ingesting models should run through a governed route.</div>
+        </div>
+
         <div class="mb-3 wide">
             <label asp-for="ExtraHeadersJson" class="form-label"></label>
             <textarea asp-for="ExtraHeadersJson" class="form-control code-box" rows="4" placeholder="{ &quot;header-name&quot;: &quot;header value&quot; }"></textarea>
@@ -75,6 +82,14 @@
         <div class="form-check form-switch">
             <input asp-for="IsEnabled" class="form-check-input" />
             <label asp-for="IsEnabled" class="form-check-label"></label>
+        </div>
+        <div class="form-check form-switch">
+            <input asp-for="SupportsVision" class="form-check-input" />
+            <label asp-for="SupportsVision" class="form-check-label"></label>
+        </div>
+        <div class="form-check form-switch">
+            <input asp-for="AllowedForDuctwork" class="form-check-input" />
+            <label asp-for="AllowedForDuctwork" class="form-check-label"></label>
         </div>
         @if (Model.Id > 0)
         {

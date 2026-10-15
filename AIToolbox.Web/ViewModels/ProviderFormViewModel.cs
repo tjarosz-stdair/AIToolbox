@@ -51,5 +51,15 @@ public sealed class ProviderFormViewModel
     [Display(Name = "Enabled")]
     public bool IsEnabled { get; set; } = true;
 
+    [Display(Name = "Supports vision (image input)")]
+    public bool SupportsVision { get; set; }
+
+    [Display(Name = "Allowed for Ductwork")]
+    public bool AllowedForDuctwork { get; set; }
+
+    [StringLength(100)]
+    [Display(Name = "Governance route")]
+    public string? GovernanceRoute { get; set; }
+
     public bool HasStoredApiKey { get; set; }
 }

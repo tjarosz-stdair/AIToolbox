@@ -152,6 +152,221 @@ public sealed class AiProviderClient : IAiProviderClient
         }
     }
 
+    public async Task<DocumentPromptResult> SendImagePromptAsync(
+        ImagePromptRequest imageRequest,
+        CancellationToken cancellationToken = default)
+    {
+        // Rejections happen before any network call, so nothing leaves the server for a bad request.
+        ValidateImageRequest(imageRequest);
+
+        var provider = imageRequest.Provider;
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(provider.RequestTimeoutSeconds, 5, 600)));
+
+            var apiKey = _secretProtector.Unprotect(provider.ApiKeyCipherText);
+            using var request = BuildImageRequest(imageRequest);
+            var client = _httpClientFactory.CreateClient("AiProviders");
+            using var response = await client.SendAsync(request, timeout.Token);
+            var responseBody = await response.Content.ReadAsStringAsync(timeout.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                stopwatch.Stop();
+                return DocumentFailure(provider, stopwatch.ElapsedMilliseconds,
+                    $"{(int)response.StatusCode} {response.ReasonPhrase}: {CreateExcerpt(responseBody)}");
+            }
+
+            if (provider.ProviderType == AiProviderType.OpenAiResponsesBackground)
+            {
+                responseBody = await PollOpenAiBackgroundResponseAsync(
+                    client,
+                    request.RequestUri,
+                    apiKey,
+                    responseBody,
+                    timeout.Token);
+            }
+
+            stopwatch.Stop();
+            var extracted = ExtractResponse(provider.ProviderType, responseBody);
+            return new DocumentPromptResult
+            {
+                ProviderId = provider.Id,
+                ProviderName = provider.DisplayName,
+                ResponseText = extracted.Text,
+                FinishReason = extracted.FinishReason,
+                InputTokens = extracted.InputTokens,
+                OutputTokens = extracted.OutputTokens,
+                DurationMs = ToInt32(stopwatch.ElapsedMilliseconds)
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            stopwatch.Stop();
+            return DocumentFailure(provider, stopwatch.ElapsedMilliseconds, "The provider request timed out.");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            // The exception text can echo request content, so only the provider id is logged here.
+            _logger.LogWarning(ex, "AI image provider {ProviderId} failed.", provider.Id);
+            return DocumentFailure(provider, stopwatch.ElapsedMilliseconds, ex.Message);
+        }
+    }
+
+    private static void ValidateImageRequest(ImagePromptRequest request)
+    {
+        var provider = request.Provider;
+
+        if (!provider.SupportsVision)
+            throw new ImagePromptRejectedException($"Provider '{provider.DisplayName}' is not enabled for vision (image input).");
+
+        if (provider.ProviderType is AiProviderType.OpenAiBatchResponses or AiProviderType.AnthropicMessageBatch)
+            throw new ImagePromptRejectedException($"Provider type {provider.ProviderType} has no synchronous image route.");
+
+        if (string.IsNullOrWhiteSpace(request.Directive))
+            throw new ImagePromptRejectedException("An image prompt needs a directive.");
+
+        if (request.Images.Count == 0)
+            throw new ImagePromptRejectedException("At least one image is required.");
+
+        if (request.Images.Count > ImagePromptLimits.MaxImagesPerRequest)
+            throw new ImagePromptRejectedException(
+                $"An image prompt may carry at most {ImagePromptLimits.MaxImagesPerRequest} images, but {request.Images.Count} were supplied.");
+
+        for (var i = 0; i < request.Images.Count; i++)
+        {
+            var image = request.Images[i];
+            if (image.Bytes is null || image.Bytes.Length == 0)
+                throw new ImagePromptRejectedException($"Image {i + 1} is empty.");
+            if (image.Bytes.Length > ImagePromptLimits.MaxImageBytes)
+                throw new ImagePromptRejectedException(
+                    $"Image {i + 1} is {image.Bytes.Length:N0} bytes, over the {ImagePromptLimits.MaxImageBytes:N0} byte limit.");
+            if (string.IsNullOrWhiteSpace(image.MediaType) || !ImagePromptLimits.AllowedMediaTypes.Contains(image.MediaType))
+                throw new ImagePromptRejectedException($"Image {i + 1} has unsupported media type '{image.MediaType}'.");
+        }
+    }
+
+    private HttpRequestMessage BuildImageRequest(ImagePromptRequest imageRequest)
+    {
+        var provider = imageRequest.Provider;
+        var request = new HttpRequestMessage(HttpMethod.Post, provider.EndpointUrl);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        ApplyExtraHeaders(request, provider.ExtraHeadersJson);
+
+        var apiKey = _secretProtector.Unprotect(provider.ApiKeyCipherText);
+        static string DataUrl(ImagePromptImage image) => $"data:{image.MediaType};base64,{Convert.ToBase64String(image.Bytes)}";
+
+        switch (provider.ProviderType)
+        {
+            case AiProviderType.OpenAiResponses:
+            case AiProviderType.OpenAiResponsesBackground:
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                }
+
+                var responseContent = new List<object>();
+                responseContent.AddRange(imageRequest.Images.Select(image => new { type = "input_image", image_url = DataUrl(image) }));
+                responseContent.Add(new { type = "input_text", text = imageRequest.Directive });
+
+                var responsesPayload = new Dictionary<string, object?>
+                {
+                    ["model"] = provider.ModelName,
+                    ["input"] = new object[] { new { role = "user", content = responseContent } }
+                };
+                if (provider.ProviderType == AiProviderType.OpenAiResponsesBackground)
+                {
+                    responsesPayload["background"] = true;
+                    responsesPayload["store"] = true;
+                }
+
+                if (provider.MaxOutputTokens is > 0)
+                {
+                    responsesPayload["max_output_tokens"] = provider.MaxOutputTokens.Value;
+                }
+
+                request.Content = JsonContent.Create(responsesPayload);
+                break;
+
+            case AiProviderType.Anthropic:
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+                }
+
+                request.Headers.TryAddWithoutValidation(
+                    "anthropic-version",
+                    string.IsNullOrWhiteSpace(provider.ApiVersion) ? "2023-06-01" : provider.ApiVersion);
+
+                var anthropicContent = new List<object>();
+                anthropicContent.AddRange(imageRequest.Images.Select(image => new
+                {
+                    type = "image",
+                    source = new
+                    {
+                        type = "base64",
+                        media_type = image.MediaType,
+                        data = Convert.ToBase64String(image.Bytes)
+                    }
+                }));
+                anthropicContent.Add(new { type = "text", text = imageRequest.Directive });
+
+                request.Content = JsonContent.Create(new
+                {
+                    model = provider.ModelName,
+                    max_tokens = provider.MaxOutputTokens.GetValueOrDefault(4000),
+                    messages = new[] { new { role = "user", content = anthropicContent } }
+                });
+                break;
+
+            default:
+                // OpenAI-compatible chat completions and Azure OpenAI share the image_url content part.
+                if (provider.ProviderType == AiProviderType.AzureOpenAi)
+                {
+                    if (!string.IsNullOrWhiteSpace(apiKey))
+                    {
+                        request.Headers.TryAddWithoutValidation("api-key", apiKey);
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                }
+
+                var chatContent = new List<object>();
+                chatContent.Add(new { type = "text", text = imageRequest.Directive });
+                chatContent.AddRange(imageRequest.Images.Select(image => new
+                {
+                    type = "image_url",
+                    image_url = new { url = DataUrl(image) }
+                }));
+
+                var chatPayload = new Dictionary<string, object?>
+                {
+                    ["model"] = provider.ModelName,
+                    ["messages"] = new[] { new { role = "user", content = chatContent } },
+                    ["temperature"] = 0.2
+                };
+                if (provider.MaxOutputTokens is > 0)
+                {
+                    chatPayload["max_tokens"] = provider.MaxOutputTokens.Value;
+                }
+
+                request.Content = JsonContent.Create(chatPayload);
+                break;
+        }
+
+        return request;
+    }
+
     private HttpRequestMessage BuildRequest(AiProvider provider, string prompt)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, provider.EndpointUrl);

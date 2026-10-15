@@ -34,6 +34,20 @@ public sealed class AiProvider
 
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>
+    /// The model accepts image input. Vision-capable and document-ingesting models must run through a
+    /// governed route (Microsoft Foundry), and hosted vision is additionally gated per use (Ductwork
+    /// plan section 6.12).
+    /// </summary>
+    public bool SupportsVision { get; set; }
+
+    /// <summary>An administrator has approved this provider for Ductwork. Off by default.</summary>
+    public bool AllowedForDuctwork { get; set; }
+
+    /// <summary>Where requests are routed for data governance, for example "Microsoft Foundry".</summary>
+    [StringLength(100)]
+    public string? GovernanceRoute { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public DateTime UpdatedUtc { get; set; }
