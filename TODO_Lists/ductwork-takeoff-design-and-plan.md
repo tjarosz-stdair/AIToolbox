@@ -124,7 +124,9 @@ Conclusions that shape the design:
 | Sample B plans with the counts and marked-up PDF | **Holdout.** Not run, tuned or inspected for tuning. Used only at gates, and a gate use spends the holdout, so a new one is needed afterwards |
 | Sample C bound set | Development set for the text-less method (OCR or vision), when that work starts |
 
-Gold labels are created in the viewer and reviewed. Accuracy thresholds are agreed with the estimator before a gate and are not invented.
+**Gold labels** are the human-verified correct answer for a drawing: for each fitting, its type, size, building type and location on the sheet. The detectors are scored against them (precision, recall, and how well confidence predicts correctness). The Sample C worksheet gives totals per building type but not locations, so it cannot show what a detector missed or invented, and gold labels fill that gap. Until the viewer exists they are made with a lightweight script and reviewed by the estimator, and from Phase 1 in the viewer. They are stored apart from the drawings and never committed to the repository, since they describe customer drawings.
+
+There are no pass/fail accuracy thresholds. The estimator does not have a number, and inventing one would be false precision. Phase 0 measures and reports; the **review level** (section 6.13) is the configurable control that decides how much the user is shown, and its cutoffs are derived from the measured calibration.
 
 ### 4.6 What we start with
 - A deterministic, tested commercial engine to wrap as `Algorithm hvac_takeoff@1.1-audit`, with Sample A parity as a regression test.
@@ -272,7 +274,25 @@ Turning the switch off takes effect at once: unused approvals are invalidated, q
 
 **Audit.** Each approval, each use, each refusal, each expiry, and every policy change is a job-level or settings audit event: who approved, when, which sheets, how many crops, the provider snapshot, the notice version shown, and the outcome. Usage and cost are logged with the existing usage records.
 
-**Scope.** The gate applies to **every** hosted-model use that sends drawing content, so the other planned LLM tasks (sheet classification, schedule extraction, crop classification) pass through the same gateway check. Whether those use the same per-run approval or an administrator-granted standing approval is an open policy choice (section 15). Text-only prompts that contain no drawing content are not covered.
+**Scope.** The gate applies to **every** hosted-model use that sends drawing content, so the other planned LLM tasks (sheet classification, schedule extraction, crop classification) pass through the same gateway check. **Decision:** per-run approval is the default for all of them. An administrator may additionally grant a **standing approval** for named task types only (for example sheet-classify, schedule-extract, crop-classify), limited to listed providers and a maximum pages per job. A standing approval is still subject to the master switch, the versioned notice and full audit, and the interface shows when one is in effect. Text-only prompts that contain no drawing content are not covered.
+
+### 6.13 Review level: how much the user is shown
+The user chooses how much the tool interrupts them, per job, at job setup and changeable later: **Sensitive** (the user is involved a lot), **Normal**, or **Insensitive** (the user accepts more of the tool's autonomy). An administrator sets the instance default and which levels are allowed, and can cap the maximum autonomy.
+
+**What a level changes.** Each detection carries a calibrated confidence. The level sets a cutoff per detector family. Below the cutoff the detection is raised as an individual **finding**. Above it, the detection goes into the batch review queue (`SurfacedAs = Batch`), grouped by sheet and category, where the user can still inspect, edit or reject it. The level in effect is recorded on the job and on each entity (`ReviewLevelAtCreation`), so the audit log can answer what the user was shown.
+
+**What a level can never change.** Everything stays a proposal until a human signs the sheet off, and these always reach the user at every level:
+- sign-off itself, and the count sheet's status;
+- holds and unknown quantities (never silent zeros);
+- ambiguities with no candidate answer, rule conflicts, reference disagreements, and overrides marked `Conflicted`;
+- the hosted-vision approval (section 6.12);
+- anything the user's rules classify as "always ask".
+
+Insensitive means fewer interruptions, not unverified counts.
+
+**Calibration comes first.** A cutoff is only meaningful if confidence is calibrated, meaning "90% confident" is right about 90% of the time. The eval harness produces a calibration report per detector family (`CalibrationRun`) from gold labels. `ReviewLevelPolicy` (instance setting, versioned, audited) maps each level to a target precision, and the cutoffs are derived from the latest calibration. Where no calibration exists for a detector family, **every level behaves as Sensitive** for it. The initial target precisions are placeholders to be replaced from measured data before any pilot, and are tuned afterwards.
+
+**Why a setting and not a threshold in code.** The estimator has no accuracy number to offer, firms differ in how much they trust a first pass, and the right balance will move as the detectors improve. The same setting makes the trade-off measurable: the activity log (section 10.1) lets us compare time-on-job and correction rates by level.
 
 ## 7. Data model (Phase 1 target)
 
@@ -285,12 +305,15 @@ TaskBinding       TaskKey, DirectiveSnapshotId NOT NULL, ProviderSnapshotId NOT 
 -- jobs (a Job is a whole development)
 Job               JobId, PublicId, Name, CustomerName, ProjectName (free text), SiteAddress, OwnerEmail,
                   State {Draft|InReview|Completing|Complete|Closed|Archiving|Archived|Restoring}, CompletionVersion,
-                  StateVersion, Completed/Closed Utc+By+Reason, summary JSON     ** master record, never deleted **
+                  StateVersion, ReviewLevel {Sensitive|Normal|Insensitive} (section 6.13), BaselineManualHours? (section 10.1),
+                  Completed/Closed Utc+By+Reason, summary JSON     ** master record, never deleted **
 JobMember         JobId, UserEmail, Role {Owner|Editor|Viewer}        (Owner and Editor = "edit permission")
 Tag, JobTag       Tag(Name, NameNormalized UNIQUE); JobTag(JobId, TagId, AddedBy, AddedUtc)
 JobWorkflowStep   JobId, Step {Setup|Process|Review|Report}, Status {NotStarted|Active|Done}
 ToolPermission    UserEmail, Permission {JobManager}          (Ductwork-only, not a global AIToolbox role)
 JobEditLock, PreemptRequest, JobArchive, JobAuditEvent        (sections 9, 10, 8)
+ActivitySession, ActivityHeartbeat                            (section 10.1, time-on-job and ROI)
+ReviewLevelPolicy (instance, versioned), CalibrationRun       (section 6.13)
 -- building types and multipliers
 BuildingType      JobId, Name (for example "Type 4", "Office"), Kind {UnitType|Building|CommonArea|Other},
                   Multiplier (the number of identical buildings or units), MultiplierSource {Manual|ArchitecturalList|Suggested},
@@ -307,7 +330,7 @@ SheetRegion       SheetId, Kind {Include|Exclude}, Reason, PolygonJson
 Entity            EntityId, SheetViewId, BuildingTypeId?, ProducerId NOT NULL, ProcessingTaskId NOT NULL, Type, Category, Tag, Size,
                   Manufacturer?, Model?, CustomerPartCode?, Quantity, Unit {EA|LF|SF}, Floor, View,
                   Source {Vector|Detector|Vlm|Manual|Derived}, Method {Geometry|Text|FlagNote|Symbol|Schedule|Vision|Manual},
-                  Confidence, ReviewStatus {Proposed|Verified|Rejected|Manual},
+                  Confidence, SurfacedAs {Finding|Batch}, ReviewLevelAtCreation, ReviewStatus {Proposed|Verified|Rejected|Manual},
                   Disposition {Included|Excluded|FactoryFurnished|TBD}, IsStale bit, StaleReason,
                   ResolutionSource {Detector|Rule|Override|UserAdded}, ResolvedByRuleId?, OverrideId?,
                   BBox (4 float cols, indexed), PolygonJson, ParentEntityId?, DerivedFromRuleId?, Supersedes/SupersededByEntityId?
@@ -326,7 +349,7 @@ EntityOverride    EntityId, Field, FromJson, ToJson, Reason, By/Utc, State {Acti
 SymbolDefinition, SymbolVersion, SymbolContext, SymbolMatch          (section 11)
 -- hosted-vision governance (section 6.12)
 VisionPolicy      (instance settings, versioned) Enabled (default 0), AllowedProviderIds, ApproverRule {EditPermission|JobManager|Admin},
-                  NoticeText + NoticeVersion, MaxPagesPerApproval, RequireReason, ChangedBy/Utc
+                  NoticeText + NoticeVersion, MaxPagesPerApproval, RequireReason, StandingApprovalTaskTypes (default none), StandingMaxPagesPerJob, ChangedBy/Utc
 VisionApproval    ApprovalId, JobId, ApprovedBy, ApprovedUtc, ExpiresUtc, SheetIdsJson, PageCount, CropCount, ProviderSnapshotId,
                   NoticeVersion, Reason?, Status {Active|Used|Expired|Revoked}
 -- work and evaluation
@@ -440,6 +463,30 @@ Every Job has a rich, append-only log of who did what, when, from where, to whic
 
 **Retention:** the complete log is always in the zip with its chain. After archive-and-purge, SQL keeps the low-volume categories (lifecycle, lock, access/membership, archive) so "who touched this job and when" is answerable without restoring; entity-edit and processing detail live only in the zip. Restore re-inserts them and re-verifies the chain. A job's gold-set crops (from correction events) are kept as separate, instance-isolated copies with their own retention, so a purge neither silently deletes nor silently keeps customer drawing content that was deliberately captured for training.
 
+### 10.1 Activity and time-on-job metrics (ROI)
+
+The audit log says what changed. This section says how long the work took, so the tool's value can be shown with measurements instead of estimates.
+
+**Time is computed on the server from heartbeats**, never reported by the client. The viewer sends a heartbeat (it reuses the lock heartbeat, 15 s) carrying only a state: **Active** if there was input (pointer, key, wheel, touch) in the last N seconds (default 60, configurable) and the tab is visible, otherwise **Idle**. The server adds the gap since the previous heartbeat to active or idle time, **capped at two heartbeat intervals**, so a closed laptop or a dead tab accrues nothing. A session ends on explicit close, on lock expiry, or on no heartbeat for the expiry period.
+
+**`ActivitySession`:** SessionId (the same identity the lock and audit log use), JobId, user, WorkflowStep (Setup, Review, Report; Process is machine time), Surface (viewer, count sheet, findings, rules, symbols), StartedUtc, EndedUtc, ActiveSeconds, IdleSeconds, ReviewLevel at the time, ClientKind. `ActivityHeartbeat` keeps the raw state samples briefly, with a short retention, since the session totals are the durable record. Counters of what the user did (edits, verifications, rejections, findings resolved, overrides, rules created) are not stored twice: they are derived by joining the audit log on session id.
+
+**Machine time and cost** come from `ProcessingTask`: queue wait, run time, retries, tokens and cost per producer. **Application logging** is structured, in the existing Serilog sink with a Ductwork category: every task start, finish, failure and retry; every gateway call with provider, tokens, duration and approval id; every lock event; correlation id on all of it so one job's story can be followed across web, gateway and worker.
+
+**ROI summary per job** (a computed view, also in the Excel report's metrics tab and the admin page):
+- calendar time: created to first count sheet, to complete;
+- human active hours by step, and idle hours, from `ActivitySession`;
+- machine hours and AI cost;
+- how much the tool produced versus what the user did with it: proposals, accepted unchanged, edited, rejected, added by hand (a recall proxy), findings raised and resolved, rules created, rework (reopens);
+- comparison with a **baseline**: `Job.BaselineManualHours` (the estimator's own estimate of the manual time, entered at completion, or an instance default per sheet) and, where one real job is timed by hand, that measurement;
+- estimated saving = baseline minus human active hours, times a loaded hourly rate that is an **administrator setting** and not stored per person, minus AI cost.
+
+**Cohort comparisons** for tuning: by review level, by detector family, by building type, by firm or designer. These are how we learn whether Insensitive actually saves time without raising correction rates.
+
+**Privacy.** Time-on-job can become employee monitoring. The default reports are **job-level aggregates**. Per-user breakdown is visible only to Job Managers and administrators, is stated in the tool's notice, and an administrator setting can turn per-user detail off, keeping totals only. This is a company decision (section 15).
+
+**Retention.** Session totals are kept with the job and included in the archive zip and the retained low-volume categories, so ROI survives archive-and-purge. Raw heartbeats are purged on a short schedule.
+
 ---
 
 ## 11. Symbol library
@@ -495,12 +542,12 @@ Sizing is relative (S/M/L).
 
 **Phase 0: platform prerequisites, baseline and eval harness (M-L).** Part of this is already done (section 4).
 - *Done:* sample survey; engine baselines (Sample A parity, Sample C failure and patch analysis, performance and memory); residential counter prototype against the worksheet; OCR and vision tests on a text-less page; markup survey; licensing and platform verifications.
-- *Needs no drawings, not started:* Contracts v0 with generated JSON Schema and a drift test; `ductwork` migration runner and the Producer/Provenance tables with CHECK constraints and tests; provider capability flags, `ProviderSnapshot`, image input and structured-output validation in the provider client (tested against a stub HTTP handler); synthetic CAD-style PDF fixture generator with ground-truth JSON; eval-harness skeleton (tables, precision/recall per fitting type and per building type, task type) tested on the fixtures.
+- *Needs no drawings, not started:* Contracts v0 with generated JSON Schema and a drift test; `ductwork` migration runner and the Producer/Provenance tables with CHECK constraints and tests; provider capability flags, `ProviderSnapshot`, image input and structured-output validation in the provider client (tested against a stub HTTP handler); synthetic CAD-style PDF fixture generator with ground-truth JSON; eval-harness skeleton (tables, precision/recall per fitting type and per building type, task type, and a calibration report) tested on the fixtures; the pure time-on-job calculation (heartbeats to active seconds) with tests (section 10.1).
 - *Now unblocked by the samples:* engine-parity harness (wrapped engine reproduces the Sample A numbers exactly); residential detector built properly (label grammar including two-dimension boots, triangle-symbol flag counting, symbol-only items, CFM-only handling) and measured per category per building type against the Sample C worksheet; gold labels for the development set made in the viewer; the text-less method (local OCR first, hosted vision only as an explicitly approved fallback, section 6.12) measured on the Sample C bound set; legal view on PyMuPDF.
-- **Exit:** measured match rates on the development set for each detector family, agreed with the estimator before the gate (no invented thresholds); engine parity holds; the text-less method decision is recorded; the holdout remains sealed. Measurements also size the worker host and concurrency caps.
+- **Exit:** measured match rates and a **calibration report** (how well confidence predicts correctness) on the development set for each detector family, reported without pass/fail thresholds because the review level (section 6.13) is the configurable control and its cutoffs come from this data; engine parity holds; the text-less method decision is recorded; the holdout remains sealed. Measurements also size the worker host and concurrency caps.
 - **Risks:** the worksheet itself may contain errors (identical counts across unit types), so disagreements need adjudication in the viewer; other designers use other label conventions, so the residential detector may need new rules per designer; confidentiality of drawings sent to hosted LLMs.
 
-**Phase 1: foundations (L).** Schema and migration runner; the data model including building types and multipliers, sheet views, disposition, holds and stale-dependency tracking; provenance types and enforcement tests; processing-task table with lease/claim/heartbeat/retry/parent-child/progress; Job entity with lifecycle, membership, tags, workflow steps, master-record protection, `JobArchive`, the edit lock and `JobAuditEvent` with the `AuditContext` architecture test; `ToolPermission` and the Job Manager grant UI; worker skeleton with the instance registry, per-instance keys, version handshake, per-task process isolation, scratch folders, concurrency caps, drain mode and the spillage test suite; chunked upload and the artifact-store abstraction; tool registration (`DuctworkTakeoff` definition, policy, Home card, log sink, scope); the hosted-vision policy settings page and the gateway's approval enforcement (section 6.12); Jobs menu generalization; viewer with a building-type, fitting-type and leaf tree, filters and hover/selection sync on **fake detections**; a count-sheet skeleton (building-type blocks, multiplier and extended columns) computed from fake data; SignalR progress.
+**Phase 1: foundations (L).** Schema and migration runner; the data model including building types and multipliers, sheet views, disposition, holds and stale-dependency tracking; provenance types and enforcement tests; processing-task table with lease/claim/heartbeat/retry/parent-child/progress; Job entity with lifecycle, membership, tags, workflow steps, master-record protection, `JobArchive`, the edit lock and `JobAuditEvent` with the `AuditContext` architecture test; `ToolPermission` and the Job Manager grant UI; worker skeleton with the instance registry, per-instance keys, version handshake, per-task process isolation, scratch folders, concurrency caps, drain mode and the spillage test suite; chunked upload and the artifact-store abstraction; tool registration (`DuctworkTakeoff` definition, policy, Home card, log sink, scope); the hosted-vision policy settings page and the gateway's approval enforcement (section 6.12); activity heartbeats, `ActivitySession` and the ROI summary (section 10.1); the review-level setting and policy page (section 6.13); Jobs menu generalization; viewer with a building-type, fitting-type and leaf tree, filters and hover/selection sync on **fake detections**; a count-sheet skeleton (building-type blocks, multiplier and extended columns) computed from fake data; SignalR progress.
 - **Exit:** a 100 MB PDF uploads through IIS and YARP; a fake task runs end to end through the worker and survives a killed worker; fake entities sync tree and overlay at 10k+ entities; extended quantities recompute correctly when a multiplier changes; no code path inserts an entity without provenance; lock, takeover and completion rules verified with two browsers.
 - **Risks:** proxy limits (test on the real path); viewer performance; hand-vendored Leaflet with no bundler.
 
@@ -510,7 +557,7 @@ Sizing is relative (S/M/L).
 
 **Phase 4: notes and rules engine (M).** `notes-to-rules` emitting the constrained schema (requirement rules; interpretation rules arrive in Phase 3); rules review UI; deterministic evaluator in Core (add-child-per-parent, allowances, attribute assignment, scope/exclusions); derived leaves. The engine's Sample A-specific logic and the estimator's purchasing rules, technical gates and intake template become data-driven rules and directives, not code. **Exit:** the evaluator is pure and property-tested and only approved rules reach it. **Risks:** schema too narrow or too loose; conflicting rules (define precedence up front).
 
-**Phase 5: review, refine, count sheet and archiving (L).** Edit tools (add/delete/reclassify/resize/merge/split, lasso, bulk), undo, review queue, per-sheet sign-off, measure tool, holds and RFIs, **the count sheet and its supporting outputs** (Excel and PDF as tasks), correction logging into the audit log and gold-set candidates; **archive, purge and restore**, the Archives admin page (move, relink, missing-file alert), round-trip and golden-zip tests. **Gates:** the estimator completes a real job faster than the manual process (a baseline timing is needed); overlay registration holds across zoom and rotation; edits survive reload with undo; dependent rows are updated or flagged stale; the screen, Excel and PDF show the same effective counts; holds and unknown quantities stay visible and cannot become silent zeros; the holdout is run once. **Risks:** count-sheet fidelity against estimator expectations; archive importers must be maintained for every shipped archive version.
+**Phase 5: review, refine, count sheet and archiving (L).** Edit tools (add/delete/reclassify/resize/merge/split, lasso, bulk), undo, review queue, per-sheet sign-off, measure tool, holds and RFIs, **the count sheet and its supporting outputs** (Excel and PDF as tasks), correction logging into the audit log and gold-set candidates; **archive, purge and restore**, the Archives admin page (move, relink, missing-file alert), round-trip and golden-zip tests. **Gates:** the estimator completes a real job faster than the manual process, measured by the activity log (section 10.1) against a baseline timing taken on one real job, with no pass/fail number invented in advance; overlay registration holds across zoom and rotation; edits survive reload with undo; dependent rows are updated or flagged stale; the screen, Excel and PDF show the same effective counts; holds and unknown quantities stay visible and cannot become silent zeros; the holdout is run once. **Risks:** count-sheet fidelity against estimator expectations; archive importers must be maintained for every shipped archive version.
 
 **v2.** P21-importable file and catalog or part-code mapping (fitting plus size to P21 items), addendum diff, layer/system mapping, duct-network graph reconstruction, fitting inference, cross-view linking, MCP tools over takeoff data (`get_job_totals`, `list_fittings_by_floor`; hosting side undecided, since AIToolbox is currently only an MCP client), cross-tenant symbol sharing.
 
@@ -518,14 +565,18 @@ Sizing is relative (S/M/L).
 
 ## 15. Open items
 
-**Needs the user.**
-- What produced the markup baked into eight Sample C files (green diamonds, purple routes, pink lines) and what each marker means, since it may be a source of item-level labels.
-- Whether two grilles per pass-through flag is the standing convention, and why Type 6 has 4 pass-throughs in the worksheet against 3 flags on the plan.
-- Whether a two-dimension boot label (`4x12`) always means a depth of 7, and whether to leave CFM-only terminals as findings on every job or keep a standing CFM-to-size rule.
-- Whether the Type 7 unit plan, present in the Sample C plans but not in the worksheet, is expected.
-- Whether the hosted-vision approval gate (section 6.12) also covers the planned sheet-classify, schedule-extract and crop-classify tasks, and whether those use per-run approval or an administrator-granted standing approval.
-- Numeric accuracy thresholds per detector family, a baseline manual takeoff time, and another completed commercial job with human counts (Sample B is sealed).
-- Which designers' drawing conventions are expected beyond the samples.
+**Resolved by the standing rule "the user arbitrates, and the tool flags and displays the discrepancy well".** These need no answer up front, and each becomes a finding the user resolves with a rule or an override (section 6.11):
+- The baked-in markup in eight Sample C files (green diamonds, purple routes, pink lines): treated as ordinary drawing content, never trusted as labels. If it interferes with a count, it becomes a finding.
+- Two grilles per pass-through flag, and why Type 6 has 4 pass-throughs against 3 flags: an interpretation rule plus a finding on the disagreement.
+- A two-dimension boot label (`4x12`) and its depth, and CFM-only terminals: findings by default, with an interpretation rule the user may create at any scope.
+- Type 7 present in the plans but not in the worksheet: building-type setup suggests it and the user confirms or excludes it.
+- Other designers' drawing conventions: handled by rules at the scope where they apply.
+- Hosted-vision scope: per-run approval by default, with an administrator-granted standing approval for named task types (section 6.12).
+- Accuracy thresholds: replaced by the configurable review level (section 6.13). No threshold is invented.
+
+**Still wanted from the user, not blocking.** A baseline manual takeoff time on one real job (timing it by hand, or from a trial of the tool's activity log, section 10.1) and, when available, another completed commercial job with human counts, since Sample B is sealed.
+
+**Needs the company.** The legal view on PyMuPDF (AGPL, or a commercial license from Artifex). Whether per-user time-on-job reporting is acceptable (section 10.1 defaults to job-level aggregates).
 
 **Deferred.** Cross-tenant symbol sharing. Where v2 MCP tools are hosted. The P21-importable file.
 
