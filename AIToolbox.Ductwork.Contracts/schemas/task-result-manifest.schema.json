@@ -1,0 +1,297 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "contractVersion": {
+      "type": "string"
+    },
+    "taskType": {
+      "type": "string"
+    },
+    "taskPublicId": {
+      "type": "string"
+    },
+    "producer": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "Llm",
+            "Algorithm",
+            "Manual"
+          ]
+        },
+        "directiveSnapshotId": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ],
+          "pattern": "^-?(?:0|[1-9]\\d*)$"
+        },
+        "providerSnapshotId": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ],
+          "pattern": "^-?(?:0|[1-9]\\d*)$"
+        },
+        "algorithmName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "algorithmVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paramsHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "userEmail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "detections": {
+      "type": "array",
+      "items": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "detectionId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantity": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+          },
+          "unit": {
+            "enum": [
+              "EA",
+              "LF",
+              "SF"
+            ]
+          },
+          "method": {
+            "enum": [
+              "Geometry",
+              "Text",
+              "FlagNote",
+              "Symbol",
+              "Schedule",
+              "Vision",
+              "Manual"
+            ]
+          },
+          "family": {
+            "enum": [
+              "ScheduleNote",
+              "GeometryNetwork",
+              "LabelFlagCount",
+              "SymbolMatch",
+              "OcrVision"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+          },
+          "buildingType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sheetViewRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "box": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "x0": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              },
+              "y0": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              },
+              "x1": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              },
+              "y1": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              },
+              "width": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              },
+              "height": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              },
+              "area": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$"
+              }
+            },
+            "required": [
+              "x0",
+              "y0",
+              "x1",
+              "y1"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "detectionId",
+          "type",
+          "quantity",
+          "method",
+          "family",
+          "confidence"
+        ]
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "findingId": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "AmbiguousLabel",
+              "GrammarVariant",
+              "ReferenceDisagreement",
+              "SymbolOnly",
+              "MissingEvidence",
+              "LowConfidence",
+              "Other"
+            ]
+          },
+          "question": {
+            "type": "string"
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "detectionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "findingId",
+          "kind",
+          "question"
+        ]
+      }
+    }
+  },
+  "required": [
+    "contractVersion",
+    "taskType",
+    "taskPublicId",
+    "producer"
+  ]
+}

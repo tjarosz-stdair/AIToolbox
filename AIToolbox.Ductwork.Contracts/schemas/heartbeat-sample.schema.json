@@ -1,0 +1,25 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "Active",
+        "Idle"
+      ]
+    },
+    "receivedUtc": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "sessionId",
+    "state"
+  ]
+}
