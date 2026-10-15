@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ductwork-sidecar"
+version = "0.1.0"
+description = "Vector and label detectors for Ductwork Takeoff, behind the JSON contract in AIToolbox.Ductwork.Contracts."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+# PyMuPDF is dual licensed (AGPL or a commercial license from Artifex). Using it in a network-facing
+# worker is a legal decision that is still open (plan section 6.7 and 15). It is isolated behind
+# ductwork_sidecar.pdf_layout so it can be replaced without touching the detectors.
+pymupdf = ["pymupdf>=1.24"]
+dev = ["pytest>=8", "jsonschema>=4"]
+
+[tool.setuptools.packages.find]
+include = ["ductwork_sidecar*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

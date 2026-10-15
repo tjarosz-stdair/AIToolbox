@@ -153,15 +153,6 @@
               },
               "y1": {
                 "type": "number"
-              },
-              "width": {
-                "type": "number"
-              },
-              "height": {
-                "type": "number"
-              },
-              "area": {
-                "type": "number"
               }
             },
             "required": [

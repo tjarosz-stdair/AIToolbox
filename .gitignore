@@ -27,3 +27,10 @@ AIToolbox.ChromeExtension.Publish/stage/
 **/appsettings.*.json
 !**/appsettings.Development.json
 !**/appsettings.example.json
+
+# Python (ductwork-sidecar)
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.venv/

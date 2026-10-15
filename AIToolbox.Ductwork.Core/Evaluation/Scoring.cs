@@ -13,7 +13,7 @@ public sealed record GoldItem
     public BoundingBox? Box { get; init; }
 }
 
-public sealed record ScoreRow(string? BuildingType, string? Type, double TruePositives, double FalsePositives, double FalseNegatives)
+public sealed record ScoreRow(string? BuildingType, string? Type, double TruePositives, double FalsePositives, double FalseNegatives, string? Size = null)
 {
     public double? Precision => TruePositives + FalsePositives == 0 ? null : TruePositives / (TruePositives + FalsePositives);
     public double? Recall => TruePositives + FalseNegatives == 0 ? null : TruePositives / (TruePositives + FalseNegatives);
@@ -35,6 +35,7 @@ public sealed record ScoreReport(
     ScoreRow Overall,
     IReadOnlyList<ScoreRow> ByType,
     IReadOnlyList<ScoreRow> ByBuildingType,
+    IReadOnlyList<ScoreRow> ByKey,
     IReadOnlyList<ScoredDetection> Scored,
     MatchMode Mode);
 
@@ -70,6 +71,8 @@ public static class Scoring
             overall,
             Group(rows, k => (null, k.Type)),
             Group(rows, k => (k.BuildingType, null)),
+            rows.Select(r => new ScoreRow(r.Key.BuildingType, r.Key.Type, r.Value.Tp, r.Value.Fp, r.Value.Fn, r.Key.Size))
+                .OrderBy(r => r.BuildingType).ThenBy(r => r.Type).ThenBy(r => r.Size).ToList(),
             scored,
             mode);
     }

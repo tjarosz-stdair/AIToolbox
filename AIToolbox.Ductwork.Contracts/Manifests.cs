@@ -1,10 +1,15 @@
+using System.Text.Json.Serialization;
+
 namespace AIToolbox.Ductwork.Contracts;
 
 /// <summary>Axis-aligned box in canonical sheet space (plan section 6.10): PDF user units, origin top-left, after rotation.</summary>
 public sealed record BoundingBox(double X0, double Y0, double X1, double Y1)
 {
+    [JsonIgnore]
     public double Width => Math.Max(0, X1 - X0);
+    [JsonIgnore]
     public double Height => Math.Max(0, Y1 - Y0);
+    [JsonIgnore]
     public double Area => Width * Height;
 
     public double IntersectionOverUnion(BoundingBox other)

@@ -60,6 +60,9 @@ public sealed class CalibrationReport
         return null;
     }
 
+    /// <summary>How many detections have confidence at or above the cutoff.</summary>
+    public int CountAtOrAbove(double cutoff) => _scored.Count(s => s.Confidence >= cutoff);
+
     private static List<CalibrationBinResult> BuildBins(IReadOnlyList<ScoredDetection> scored, int binCount)
     {
         var predicted = new int[binCount];
