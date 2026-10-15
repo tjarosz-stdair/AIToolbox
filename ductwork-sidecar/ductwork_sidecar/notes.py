@@ -23,7 +23,7 @@ class FlagNotes:
 
 
 def parse_flag_notes(layout: PageLayout) -> FlagNotes:
-    heading = next((l for l in layout.lines if NOTES_HEADING.match(l.text)), None)
+    heading = next((l for l in layout.lines if NOTES_HEADING.search(l.text)), None)
     if heading is None:
         return FlagNotes({}, None, None)
 

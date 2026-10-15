@@ -40,6 +40,7 @@ FAMILY = "LabelFlagCount"
 _CFM_MAX_DROP = 22.0
 _CFM_MAX_OFFSET = 35.0
 _PLAN_MARGIN = 10.0
+OCR_TRUST = 0.9
 
 
 @dataclass
@@ -87,6 +88,8 @@ def detect(layout: PageLayout, building_type: str | None = None, sheet_ref: str 
     lines = _merge_stacked_cfm([l for l in layout.lines if region.contains_point(l.box.cx, l.box.cy)])
 
     ids = _IdSource(sheet_ref or "p1")
+    # Text read by OCR can be misread, so everything derived from it is trusted a little less.
+    trust = 1.0 if layout.text_source == "text-layer" else OCR_TRUST
     sized, cfm_lines, other = _classify_lines(lines)
     pairs = _pair_cfm(sized, cfm_lines)
     paired_cfm = {id(c) for c in pairs.values() if c is not None}
@@ -95,11 +98,11 @@ def detect(layout: PageLayout, building_type: str | None = None, sheet_ref: str 
 
     for line, rule, size in sized:
         cfm = pairs.get(id(line))
-        confidence = rule.confidence
+        confidence = rule.confidence * trust
         evidence = f"label '{line.text}'"
         if cfm is not None:
             evidence += f" with {cfm.text}"
-            confidence = min(0.99, confidence + 0.04)
+            confidence = min(0.99, confidence + 0.04 * trust)
         det_id = ids.next()
         result.detections.append(
             _detection(det_id, rule.type, size, rule.name, "Text", confidence, building, sheet_ref, line.box, evidence)
@@ -120,7 +123,7 @@ def detect(layout: PageLayout, building_type: str | None = None, sheet_ref: str 
         value = CFM_LINE.match(cfm.text).group(1)
         det_id = ids.next()
         result.detections.append(
-            _detection(det_id, TERMINAL_CFM_ONLY, None, "cfm-only", "Text", 0.3, building, sheet_ref, cfm.box,
+            _detection(det_id, TERMINAL_CFM_ONLY, None, "cfm-only", "Text", 0.3 * trust, building, sheet_ref, cfm.box,
                        f"'{cfm.text}' has no size label", tag=f"{int(value)} CFM")
         )
         result.findings.append(
@@ -143,7 +146,7 @@ def detect(layout: PageLayout, building_type: str | None = None, sheet_ref: str 
         size = rule.size(rule.pattern.search(text))
         for box in boxes:
             result.detections.append(
-                _detection(ids.next(), rule.type, size, rule.name, "FlagNote", rule.confidence, building, sheet_ref, box,
+                _detection(ids.next(), rule.type, size, rule.name, "FlagNote", rule.confidence * trust, building, sheet_ref, box,
                            f"flag {number}: {text[:80]}")
             )
 
@@ -249,19 +252,28 @@ def _count_flags(layout: PageLayout, region: Box, notes: FlagNotes):
     """Flag numbers found inside triangle symbols within the plan region."""
     triangles = [t for t in layout.triangles if region.contains_point(t.cx, t.cy)]
     boxes: dict[int, list[Box]] = {}
-    for word in layout.words:
-        if not re.fullmatch(r"\d{1,2}", word.text):
+    ambiguous = 0
+    for tri in triangles:
+        # One flag per triangle. A two-digit flag can arrive as two tokens, so tokens inside one
+        # triangle are read left to right and joined, and anything longer than two digits is not a flag.
+        digits = sorted(
+            (w for w in layout.words
+             if re.fullmatch(r"\d{1,2}", w.text) and tri.contains_point(w.box.cx, w.box.cy, margin=3)),
+            key=lambda w: w.box.x0,
+        )
+        if not digits:
             continue
-        for tri in triangles:
-            if tri.contains_point(word.box.cx, word.box.cy, margin=3):
-                boxes.setdefault(int(word.text), []).append(tri)
-                break
+        text = "".join(w.text for w in digits)
+        if len(text) > 2:
+            ambiguous += 1
+            continue
+        boxes.setdefault(int(text), []).append(tri)
     digits_outside = sum(
         1 for w in layout.words
         if re.fullmatch(r"\d{1,2}", w.text) and region.contains_point(w.box.cx, w.box.cy)
         and not any(t.contains_point(w.box.cx, w.box.cy, margin=3) for t in triangles)
     )
-    return boxes, {"triangles": len(triangles), "digits_outside_triangles": digits_outside}
+    return boxes, {"triangles": len(triangles), "digits_outside_triangles": digits_outside, "ambiguous_flag_triangles": ambiguous}
 
 
 def _cfm_candidates(sized, cfm_value: str) -> list[str]:

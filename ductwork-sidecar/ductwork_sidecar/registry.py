@@ -88,21 +88,21 @@ class NoteRule:
 NOTE_RULES: tuple[NoteRule, ...] = (
     NoteRule(
         "pass-through",
-        re.compile(r"(\d{1,2})\s*[xX]\s*(\d{1,2})\s+PASS[\s-]*THROUGH", re.I),
+        re.compile(r"(\d{1,2})\s*[xX]\s*(\d{1,2})\s*PASS[\s-]*THROUGH", re.I),
         GRILLE,
         lambda m: f"{int(m.group(1))}x{int(m.group(2))} Pass Through",
         0.9,
     ),
     NoteRule(
         "outside-air-louver",
-        re.compile(r"OUTSIDE\s+AIR\s+DUCT.*LOUVER", re.I),
+        re.compile(r"OUTSIDE\s*AIR\s*DUCT.*LOUVER", re.I),
         LOUVER,
         lambda m: "Outside Air Louver",
         0.85,
     ),
     NoteRule(
         "dryer-vent-box",
-        re.compile(r"DRYER\s+VENT\s+BOX", re.I),
+        re.compile(r"DRYER\s*VENT\s*BOX", re.I),
         DRYER_BOOT,
         lambda m: "Dryer Boot",
         0.9,
@@ -110,4 +110,5 @@ NOTE_RULES: tuple[NoteRule, ...] = (
 )
 
 TITLE_LINE = re.compile(r"^MECH[A-Z.&\s]*PLANS?\s*-\s*(.+)$", re.I)
-NOTES_HEADING = re.compile(r"^FLAG\s+NOTES", re.I)
+# Not anchored: a flag symbol or stray mark can precede the heading, and OCR can drop the space.
+NOTES_HEADING = re.compile(r"FLAG\s*NOTES", re.I)

@@ -69,6 +69,8 @@ class PageLayout:
     words: list[TextWord]
     triangles: list[Box]
     border: Box | None
+    # Where the text came from: the PDF's own text layer, or OCR. OCR can misread, so detectors trust it less.
+    text_source: str = "text-layer"
 
     @property
     def has_text(self) -> bool:
@@ -103,7 +105,8 @@ def _layout_from_page(page, pymupdf) -> PageLayout:
     lines.sort(key=lambda l: (round(l.box.y0), l.box.x0))
 
     drawings = page.get_drawings()
-    triangles = [to_box(d["rect"]) for d in drawings if _is_triangle(d)]
+    scale = max(page.rect.width, page.rect.height)
+    triangles = [to_box(d["rect"]) for d in drawings if _is_triangle(d, scale)]
     border = _find_border([to_box(d["rect"]) for d in drawings], page.rect.width * page.rect.height)
 
     # page.rect is already the displayed (rotated) rectangle, so it must not go through the matrix again.
@@ -118,7 +121,13 @@ def _layout_from_page(page, pymupdf) -> PageLayout:
     )
 
 
-def _is_triangle(drawing: dict) -> bool:
+# Flag triangles are 0.6% to 6% of the long side of the sheet (15 to 160 pt on a 36 in sheet). Sizes are
+# relative so the same plan printed smaller, for example in a letter-size bound set, is still found.
+_TRIANGLE_MIN = 0.0058
+_TRIANGLE_MAX = 0.062
+
+
+def _is_triangle(drawing: dict, sheet_scale: float = 2592.0) -> bool:
     """A closed or nearly closed path of three straight segments with exactly three distinct corners."""
     items = drawing["items"]
     if not 3 <= len(items) <= 4 or any(item[0] != "l" for item in items):
@@ -128,7 +137,30 @@ def _is_triangle(drawing: dict) -> bool:
         corners.add((round(item[1].x), round(item[1].y)))
         corners.add((round(item[2].x), round(item[2].y)))
     rect = drawing["rect"]
-    return len(corners) == 3 and 15 < rect.width < 160 and 15 < rect.height < 160
+    lo, hi = _TRIANGLE_MIN * sheet_scale, _TRIANGLE_MAX * sheet_scale
+    return len(corners) == 3 and lo < rect.width < hi and lo < rect.height < hi
+
+
+def triangle_corners(drawing: dict) -> list[tuple[float, float]]:
+    """The three distinct corners of a triangle drawing, in the page's stored coordinates."""
+    corners: list[tuple[float, float]] = []
+    for item in drawing["items"]:
+        for p in (item[1], item[2]):
+            if not any(abs(p.x - q[0]) < 0.3 and abs(p.y - q[1]) < 0.3 for q in corners):
+                corners.append((p.x, p.y))
+    return corners[:3]
+
+
+def point_in_triangle(x: float, y: float, corners: list[tuple[float, float]]) -> bool:
+    (ax, ay), (bx, by), (cx, cy) = corners
+
+    def side(px, py, qx, qy, rx, ry):
+        return (px - rx) * (qy - ry) - (qx - rx) * (py - ry)
+
+    d1, d2, d3 = side(x, y, ax, ay, bx, by), side(x, y, bx, by, cx, cy), side(x, y, cx, cy, ax, ay)
+    has_neg = d1 < 0 or d2 < 0 or d3 < 0
+    has_pos = d1 > 0 or d2 > 0 or d3 > 0
+    return not (has_neg and has_pos)
 
 
 def _find_border(boxes: Iterable[Box], page_area: float) -> Box | None:

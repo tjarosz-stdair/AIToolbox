@@ -247,3 +247,68 @@ def test_params_hash_changes_when_the_grammar_changes(monkeypatch):
     assert before == manifest_module.params_hash()
     monkeypatch.setattr(registry, "LABEL_RULES", registry.LABEL_RULES[:-1])
     assert manifest_module.params_hash() != before
+
+
+# ---- OCR-shaped input: dropped spaces, split digits, lower trust
+
+def test_ocr_text_with_dropped_spaces_still_matches_notes_and_heading():
+    from ductwork_sidecar.notes import parse_flag_notes
+    from ductwork_sidecar.pdf_layout import Box, PageLayout, TextLine
+
+    def line(text, x0, y0, x1, y1):
+        return TextLine(text, Box(x0, y0, x1, y1))
+
+    lines = [
+        line("FLAGNOTES-MECHANIC", 600, 185, 685, 190),
+        line("2.", 580, 200, 583, 204),
+        line("14X9PASSTHROUGHLOUVEREDVENT,STAGGERED,ABOVEBEDROOM", 587, 201, 685, 204),
+        line("8.", 580, 252, 583, 256),
+        line("RECESSEDDRYERVENTBOX.", 587, 252, 628, 256),
+    ]
+    layout = PageLayout(792, 612, 0, lines, [], [], None, text_source="ocr")
+    notes = parse_flag_notes(layout)
+
+    assert 2 in notes.notes and 8 in notes.notes
+    assert registry.NOTE_RULES[0].pattern.search(notes.notes[2])
+    assert registry.NOTE_RULES[-1].pattern.search(notes.notes[8])
+
+
+def test_a_two_digit_flag_split_into_two_tokens_is_one_flag_not_two(tmp_path):
+    from ductwork_sidecar.pdf_layout import Box, PageLayout, TextWord
+    from ductwork_sidecar.notes import FlagNotes
+    from ductwork_sidecar.residential import _count_flags
+
+    tri = Box(100, 100, 130, 130)
+    words = [TextWord("1", Box(108, 112, 112, 120)), TextWord("1", Box(114, 112, 118, 120))]
+    layout = PageLayout(792, 612, 0, [], words, [tri], None)
+    boxes, diagnostics = _count_flags(layout, Box(0, 0, 792, 612), FlagNotes({}, None, None))
+
+    assert list(boxes) == [11] and len(boxes[11]) == 1
+    assert diagnostics["ambiguous_flag_triangles"] == 0
+
+
+def test_three_digits_in_one_triangle_are_not_a_flag():
+    from ductwork_sidecar.pdf_layout import Box, PageLayout, TextWord
+    from ductwork_sidecar.notes import FlagNotes
+    from ductwork_sidecar.residential import _count_flags
+
+    tri = Box(100, 100, 130, 130)
+    words = [TextWord(d, Box(104 + 6 * i, 112, 108 + 6 * i, 120)) for i, d in enumerate("123")]
+    boxes, diagnostics = _count_flags(PageLayout(792, 612, 0, [], words, [tri], None), Box(0, 0, 792, 612), FlagNotes({}, None, None))
+
+    assert boxes == {} and diagnostics["ambiguous_flag_triangles"] == 1
+
+
+def test_detections_from_ocr_are_trusted_less_than_the_same_detections_from_a_text_layer(tmp_path):
+    layout, from_text = run(tmp_path, standard_sheet())
+    ocr_layout = PageLayoutCopy(layout)
+    from_ocr = detect(ocr_layout, sheet_ref="s1")
+
+    assert [d["type"] for d in from_ocr.detections] == [d["type"] for d in from_text.detections]
+    for a, b in zip(from_text.detections, from_ocr.detections):
+        assert b["confidence"] < a["confidence"]
+
+
+def PageLayoutCopy(layout):
+    import dataclasses
+    return dataclasses.replace(layout, text_source="ocr")
