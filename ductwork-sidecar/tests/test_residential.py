@@ -118,7 +118,7 @@ def test_a_cfm_only_terminal_is_reported_with_candidates_and_never_sized(tmp_pat
     assert orphan["tag"] == "100 CFM"
     assert orphan["confidence"] <= 0.35
     finding = next(f for f in result.findings if f["kind"] == "AmbiguousLabel")
-    assert "4x10x7" in finding["candidates"]
+    assert finding["candidates"] == ["4x10x7"]  # terminal sizes only: no fans or grilles
 
 
 def test_a_sheet_without_a_text_layer_says_so_instead_of_returning_an_empty_answer(tmp_path):
@@ -135,6 +135,41 @@ def test_flags_without_a_matching_note_are_diagnostics_not_detections(tmp_path):
     assert result.diagnostics["unmapped_flags"] == {4: 1, 5: 1}
     assert not [d for d in result.detections if d["type"] in ("Grille", "DryerBoot") and "flag" in d["evidence"]]
 
+
+
+def test_airflow_written_on_two_lines_is_not_silently_dropped(tmp_path):
+    """Some sheets stack the number above the word CFM. Without joining them the terminal vanishes from the count."""
+    sheet = standard_sheet(boots=[(400, 300, "4x10x7", "100 CFM")])
+    sheet.stacked_cfm = [(900, 600, 100), (1200, 600, 75)]
+    _, result = run(tmp_path, sheet)
+
+    orphans = [d for d in result.detections if d["type"] == "CfmOnlyTerminal"]
+    assert sorted(d["tag"] for d in orphans) == ["100 CFM", "75 CFM"]
+    assert len([f for f in result.findings if f["kind"] == "AmbiguousLabel"]) == 2
+
+
+def test_stacked_airflow_under_a_size_label_pairs_with_it(tmp_path):
+    sheet = standard_sheet(boots=[])
+    sheet.plain = [(400, 300, "4x12x7")]
+    sheet.stacked_cfm = [(400, 313, 100)]
+    _, result = run(tmp_path, sheet)
+
+    boot = next(d for d in result.detections if d["type"] == "Boot")
+    assert "100 CFM" in boot["evidence"]
+    assert not [d for d in result.detections if d["type"] == "CfmOnlyTerminal"]
+
+
+def test_a_number_that_is_not_above_a_cfm_word_is_left_alone(tmp_path):
+    sheet = standard_sheet(boots=[])
+    sheet.plain = [(400, 300, "100"), (900, 700, "CFM")]  # far apart: two unrelated lines
+    _, result = run(tmp_path, sheet)
+    assert not [d for d in result.detections if d["type"] == "CfmOnlyTerminal" and d.get("tag") == "100 CFM"]
+
+
+def test_the_outside_air_louver_note_is_counted_from_its_flag(tmp_path):
+    sheet = standard_sheet(flags=[(500, 1000, 11)])
+    _, result = run(tmp_path, sheet)
+    assert by_type_size(result)[("Louver", "Outside Air Louver")] == 1
 
 # ---- coordinates and rotation
 
@@ -165,7 +200,7 @@ def test_notes_are_parsed_across_continuation_lines_and_two_digit_numbers(tmp_pa
     assert notes.notes[2].startswith("14X9 PASS THROUGH")
     assert notes.notes[8] == "RECESSED DRYER VENT BOX."
     assert "ROOF JACK" in notes.notes[10]  # continuation line joined
-    assert len(notes.notes) == 10
+    assert len(notes.notes) == 11
 
 
 def test_building_type_is_read_from_the_title_and_can_be_overridden(tmp_path):

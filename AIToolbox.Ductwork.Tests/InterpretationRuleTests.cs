@@ -50,6 +50,49 @@ public class InterpretationRuleTests
     }
 
     [Fact]
+    public void A_size_suffix_extends_the_drawn_size_and_is_not_applied_twice()
+    {
+        var rule = new InterpretationRule
+        {
+            RuleId = "depth", Description = "x",
+            Match = new RuleMatch { Type = "Boot", SizePattern = @"^\d+x\d+$" },
+            Action = new RuleAction { SizeSuffix = "x7" }
+        };
+
+        var once = InterpretationRuleEngine.Apply([Det("a", "Boot", "4x12"), Det("b", "Boot", null)], [rule]);
+        Assert.Equal("4x12x7", once.Detections[0].Size);
+        Assert.Null(once.Detections[1].Size);                  // nothing to append to, and it did not match the pattern anyway
+
+        var twice = InterpretationRuleEngine.Apply(once.Detections, [rule]);
+        Assert.Equal("4x12x7", twice.Detections[0].Size);      // does not match the pattern any more
+        Assert.Empty(twice.Applications);
+
+        var unconditional = rule with { Match = new RuleMatch { Type = "Boot" } };
+        Assert.Empty(InterpretationRuleEngine.Apply(once.Detections, [unconditional]).Applications);   // already ends in x7
+    }
+
+    [Fact]
+    public void A_terminal_with_no_size_can_be_resolved_by_its_tag_and_the_building_type()
+    {
+        var rule = new InterpretationRule
+        {
+            RuleId = "cfm-100", Description = "x",
+            Match = new RuleMatch { Type = "CfmOnlyTerminal", Tag = "100 CFM", BuildingType = "Office" },
+            Action = new RuleAction { SetType = "Boot", SetSize = "4x12x7" }
+        };
+        var orphan = Det("a", "CfmOnlyTerminal", null, "Office") with { Tag = "100 CFM" };
+        var otherTag = Det("b", "CfmOnlyTerminal", null, "Office") with { Tag = "75 CFM" };
+        var otherBuilding = Det("c", "CfmOnlyTerminal", null, "House") with { Tag = "100 CFM" };
+
+        var result = InterpretationRuleEngine.Apply([orphan, otherTag, otherBuilding], [rule]);
+
+        Assert.Equal(("Boot", "4x12x7"), (result.Detections[0].Type, result.Detections[0].Size));
+        Assert.Equal("CfmOnlyTerminal", result.Detections[1].Type);
+        Assert.Equal("CfmOnlyTerminal", result.Detections[2].Type);
+        Assert.Single(result.Applications);
+    }
+
+    [Fact]
     public void The_input_is_never_modified()
     {
         var input = new[] { Det("a", "Boot", "4x12") };

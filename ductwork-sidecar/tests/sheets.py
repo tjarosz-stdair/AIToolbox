@@ -26,6 +26,7 @@ DEFAULT_NOTES = {
     8: "RECESSED DRYER VENT BOX.",
     9: "2\" COMBUSTION AIR AND 2\" FLUE VENT TO CONCENTRIC VENT UP THROUGH ROOF",
     10: "ROUTE 6\" DIA. EXHAUST DUCT FROM CEILING MOUNTED EXHAUST FAN UP THROUGH ROOF TO ROOF JACK.",
+    11: "OUTSIDE AIR DUCT TO RETURN AIR DUCT WITH LOUVER AND INSECT SCREEN",
 }
 
 
@@ -42,6 +43,8 @@ class Sheet:
     plain: list[tuple[float, float, str]] = field(default_factory=list)
     notes: dict[int, str] = field(default_factory=lambda: dict(DEFAULT_NOTES))
     with_text: bool = True
+    # (x, y, number) airflow written as two lines: the number above the word CFM
+    stacked_cfm: list[tuple[float, float, int]] = field(default_factory=list)
 
 
 class _Canvas:
@@ -107,6 +110,9 @@ def _draw(c: _Canvas, sheet: Sheet):
         c.label(x, y, text, sheet.with_text)
     for x, y, text in sheet.plain:
         c.label(x, y, text, sheet.with_text)
+    for x, y, number in sheet.stacked_cfm:
+        c.label(x, y, str(number), sheet.with_text)
+        c.label(x, y + 12, "CFM", sheet.with_text)
     for x, y, number in sheet.flags:
         c.polyline([(x, y - 24), (x - 24, y + 18), (x + 24, y + 18), (x, y - 24)])
         c.label(x - 5 * len(str(number)), y - 2, str(number), sheet.with_text)

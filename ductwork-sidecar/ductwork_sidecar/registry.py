@@ -18,6 +18,7 @@ BOOT = "Boot"
 FAN = "Fan"
 GRILLE = "Grille"
 DRYER_BOOT = "DryerBoot"
+LOUVER = "Louver"
 TERMINAL_CFM_ONLY = "CfmOnlyTerminal"
 
 
@@ -68,6 +69,9 @@ LABEL_RULES: tuple[LabelRule, ...] = (
 )
 
 CFM_LINE = re.compile(r"^(\d{2,4})\s*CFM$", re.I)
+# Some sheets stack the airflow on two lines: the number above the word CFM.
+CFM_NUMBER_LINE = re.compile(r"^\d{2,4}$")
+CFM_WORD_LINE = re.compile(r"^CFM$", re.I)
 
 
 @dataclass(frozen=True)
@@ -88,6 +92,13 @@ NOTE_RULES: tuple[NoteRule, ...] = (
         GRILLE,
         lambda m: f"{int(m.group(1))}x{int(m.group(2))} Pass Through",
         0.9,
+    ),
+    NoteRule(
+        "outside-air-louver",
+        re.compile(r"OUTSIDE\s+AIR\s+DUCT.*LOUVER", re.I),
+        LOUVER,
+        lambda m: "Outside Air Louver",
+        0.85,
     ),
     NoteRule(
         "dryer-vent-box",

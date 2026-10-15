@@ -13,14 +13,20 @@ public sealed record RuleMatch
     public string? Type { get; init; }
     public string? Size { get; init; }
     public string? SizePattern { get; init; }
+
+    /// <summary>The tag exactly, for example "100 CFM" on a terminal that carries no size.</summary>
+    public string? Tag { get; init; }
     public string? BuildingType { get; init; }
     public string? Method { get; init; }
 }
 
-/// <summary>What a rule does to a matching detection. Only these three actions exist.</summary>
+/// <summary>What a rule does to a matching detection. Only these four actions exist.</summary>
 public sealed record RuleAction
 {
     public string? SetSize { get; init; }
+
+    /// <summary>Appended to the existing size, for example "x7" turns "4x12" into "4x12x7". Needs a size to append to.</summary>
+    public string? SizeSuffix { get; init; }
     public string? SetType { get; init; }
     public double? MultiplyQuantity { get; init; }
 }
@@ -92,13 +98,13 @@ public static class InterpretationRuleEngine
             if (!seen.Add(rule.RuleId)) throw new ArgumentException($"Rule id '{rule.RuleId}' is used more than once.");
 
             var a = rule.Action;
-            if (a.SetSize is null && a.SetType is null && a.MultiplyQuantity is null)
+            if (a.SetSize is null && a.SizeSuffix is null && a.SetType is null && a.MultiplyQuantity is null)
                 throw new ArgumentException($"Rule '{rule.RuleId}' has no action.");
             if (a.MultiplyQuantity is { } m && (!double.IsFinite(m) || m < 0))
                 throw new ArgumentException($"Rule '{rule.RuleId}' multiplies by {m}, which must be zero or more.");
 
             var match = rule.Match;
-            if (match.Type is null && match.Size is null && match.SizePattern is null && match.BuildingType is null && match.Method is null)
+            if (match.Type is null && match.Size is null && match.SizePattern is null && match.Tag is null && match.BuildingType is null && match.Method is null)
                 throw new ArgumentException($"Rule '{rule.RuleId}' matches everything. Give it at least one condition.");
             if (match.SizePattern is not null)
                 _ = new Regex(match.SizePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeout);
@@ -111,6 +117,7 @@ public static class InterpretationRuleEngine
         if (m.BuildingType is not null && !Eq(m.BuildingType, d.BuildingType)) return false;
         if (m.Method is not null && !Eq(m.Method, d.Method.ToString())) return false;
         if (m.Size is not null && !Eq(m.Size, d.Size)) return false;
+        if (m.Tag is not null && !Eq(m.Tag, d.Tag)) return false;
         if (m.SizePattern is not null)
         {
             if (d.Size is null) return false;
@@ -143,6 +150,13 @@ public static class InterpretationRuleEngine
         {
             next = next with { Size = size };
             changes.Add($"size {d.Size ?? "(none)"} -> {size}");
+        }
+
+        if (!string.IsNullOrEmpty(action.SizeSuffix) && next.Size is { } existing
+            && !existing.EndsWith(action.SizeSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            next = next with { Size = existing + action.SizeSuffix };
+            changes.Add($"size {existing} -> {next.Size}");
         }
 
         if (action.MultiplyQuantity is { } factor && factor != 1)

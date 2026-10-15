@@ -24,7 +24,10 @@ from dataclasses import dataclass, field
 from .notes import FlagNotes, parse_flag_notes
 from .pdf_layout import Box, PageLayout, TextLine
 from .registry import (
+    BOOT,
     CFM_LINE,
+    CFM_NUMBER_LINE,
+    CFM_WORD_LINE,
     LABEL_RULES,
     NOTE_RULES,
     TERMINAL_CFM_ONLY,
@@ -81,7 +84,7 @@ def detect(layout: PageLayout, building_type: str | None = None, sheet_ref: str 
     building = building_type or detect_building_type(layout)
     notes = parse_flag_notes(layout)
     region = plan_region(layout, notes)
-    lines = [l for l in layout.lines if region.contains_point(l.box.cx, l.box.cy)]
+    lines = _merge_stacked_cfm([l for l in layout.lines if region.contains_point(l.box.cx, l.box.cy)])
 
     ids = _IdSource(sheet_ref or "p1")
     sized, cfm_lines, other = _classify_lines(lines)
@@ -171,6 +174,34 @@ class _IdSource:
         return self._f
 
 
+def _merge_stacked_cfm(lines: list[TextLine]) -> list[TextLine]:
+    """Joins an airflow written on two lines (``100`` above ``CFM``) into one ``100 CFM`` line.
+
+    Without this, such a terminal is not recognised at all and silently disappears from the count. Only
+    a bare number sitting directly above a bare ``CFM`` is joined, and each line is used once.
+    """
+    numbers = [l for l in lines if CFM_NUMBER_LINE.match(l.text.strip())]
+    words = [l for l in lines if CFM_WORD_LINE.match(l.text.strip())]
+    consumed: set[int] = set()
+    merged: list[TextLine] = []
+    for word in words:
+        best = None
+        for num in numbers:
+            if id(num) in consumed:
+                continue
+            gap = word.box.y0 - num.box.y1
+            if -2 <= gap <= 8 and abs(word.box.cx - num.box.cx) <= 15:
+                if best is None or gap < best[0]:
+                    best = (gap, num)
+        if best is not None:
+            num = best[1]
+            consumed.add(id(num))
+            consumed.add(id(word))
+            box = Box(min(num.box.x0, word.box.x0), num.box.y0, max(num.box.x1, word.box.x1), word.box.y1)
+            merged.append(TextLine(f"{num.text.strip()} CFM", box))
+    return [l for l in lines if id(l) not in consumed] + merged
+
+
 def _classify_lines(lines: list[TextLine]):
     sized: list[tuple[TextLine, LabelRule, str]] = []
     cfm: list[TextLine] = []
@@ -234,11 +265,9 @@ def _count_flags(layout: PageLayout, region: Box, notes: FlagNotes):
 
 
 def _cfm_candidates(sized, cfm_value: str) -> list[str]:
-    seen: list[str] = []
-    for _line, _rule, size in sized:
-        if size not in seen:
-            seen.append(size)
-    return seen or []
+    """Terminal sizes that appear elsewhere on the sheet, most frequent first. Fans and grilles are not terminals."""
+    counts = Counter(size for _line, rule, size in sized if rule.type == BOOT)
+    return [size for size, _n in counts.most_common()]
 
 
 def _detection(det_id, type_, size, method_name, method, confidence, building, sheet_ref, box: Box, evidence, tag=None) -> dict:

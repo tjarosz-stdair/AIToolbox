@@ -40,7 +40,7 @@ static int Run(string[] args)
     {
         gold = JsonSerializer.Deserialize<List<GoldItem>>(File.ReadAllText(options.Gold!), web) ?? [];
     }
-    catch (Exception ex) when (ex is IOException or JsonException)
+    catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
     {
         Console.Error.WriteLine($"Could not read the gold file: {ex.Message}");
         return 1;
@@ -51,7 +51,19 @@ static int Run(string[] args)
     var failed = false;
     foreach (var path in options.Predictions)
     {
-        var parsed = StructuredOutput.Parse<TaskResultManifest>(File.ReadAllText(path), validator);
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"{path}: could not be read: {ex.Message}");
+            failed = true;
+            continue;
+        }
+
+        var parsed = StructuredOutput.Parse<TaskResultManifest>(text, validator);
         if (!parsed.IsValid)
         {
             Console.Error.WriteLine($"{path}: not a valid manifest:");
@@ -77,7 +89,18 @@ static int Run(string[] args)
     var applications = new List<RuleApplication>();
     if (options.Rules is not null)
     {
-        var rules = JsonSerializer.Deserialize<List<InterpretationRule>>(File.ReadAllText(options.Rules), web) ?? [];
+        List<InterpretationRule> rules;
+        try
+        {
+            rules = JsonSerializer.Deserialize<List<InterpretationRule>>(File.ReadAllText(options.Rules), web) ?? [];
+            InterpretationRuleEngine.Validate(rules);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or ArgumentException)
+        {
+            Console.Error.WriteLine($"Could not use the rules file: {ex.Message}");
+            return 1;
+        }
+
         var applied = InterpretationRuleEngine.Apply(detections, rules);
         detections = applied.Detections.ToList();
         applications.AddRange(applied.Applications);
