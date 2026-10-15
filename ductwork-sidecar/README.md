@@ -20,10 +20,17 @@ pass-through flag" is reported as drawn, with a finding, and a rule (resolved by
 | `residential.py` | Family C detector: label and flag-note counting for residential unit plans. |
 | `manifest.py` | Builds the contract-shaped manifest. |
 
+## Tools
+
+`tools/engine_parity.py` runs the wrapped commercial engine on a reference plan set and compares its
+summary with an audited reference workbook, line by line (exit code 0 means identical). It is the
+regression test for "wrapping the engine did not change its answers". The plan, settings and reference
+are passed as paths, because no customer data lives in this repository.
+
 ## Licensing
 
 `pymupdf` is an optional dependency because its license (AGPL or Artifex commercial) is an open
-company decision. Nothing outside `pdf_layout.py` imports it.
+company decision. Only `pdf_layout.py` and `ocr_layout.py` import it.
 
 ## Tests
 
