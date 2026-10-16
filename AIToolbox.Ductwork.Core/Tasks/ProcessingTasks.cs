@@ -121,9 +121,28 @@ public sealed class ProcessingTaskRepository
     /// </summary>
     public Task<ProcessingTaskRecord> EnqueueAsync(NewProcessingTask task, EditToken editToken, AuditContext context,
         CancellationToken cancellationToken = default) =>
-        JobTxn.RunAsync(_open, task.JobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, task.JobId, context, cancellationToken, t => EnqueueCoreAsync(t, task, context), editToken, requires: JobCapability.Edit);
+
+    /// <summary>
+    /// Queues work by task type. The producer, the attempt limit and whether drawings go to a hosted model
+    /// come from the type's active binding, which exists only for a task type that has been evaluated. A type
+    /// with no binding cannot be queued, whoever asks.
+    /// </summary>
+    public Task<ProcessingTaskRecord> EnqueueByTypeAsync(long jobId, string taskType, string? inputManifestRef, long? visionApprovalId, EditToken editToken,
+        AuditContext context, CancellationToken cancellationToken = default) =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
-            await t.RequireAsync(JobCapability.Edit);
+            var binding = await TaskBindingRepository.ReadActiveAsync(t.Connection, t.Transaction, taskType.Trim(), t.Token)
+                ?? throw new JobRuleViolationException($"The task type '{taskType}' is not enabled: it has no active, evaluated binding.");
+            return await EnqueueCoreAsync(t, new NewProcessingTask
+            {
+                JobId = jobId, TaskType = binding.TaskType, ProducerId = binding.ProducerId, InputManifestRef = inputManifestRef, MaxAttempts = binding.MaxAttempts,
+                SendsDrawingContentToHostedModel = binding.SendsDrawingContentToHostedModel, VisionApprovalId = visionApprovalId
+            }, context);
+        }, editToken, requires: JobCapability.Edit);
+
+    private static async Task<ProcessingTaskRecord> EnqueueCoreAsync(JobTxn t, NewProcessingTask task, AuditContext context)
+    {
             t.RequireEditable();
             if (string.IsNullOrWhiteSpace(task.TaskType)) throw new JobRuleViolationException("A task needs a type.");
             if (task.MaxAttempts < 1) throw new JobRuleViolationException("A task needs at least one attempt.");
@@ -169,7 +188,7 @@ public sealed class ProcessingTaskRepository
                     ["taskType"] = created.TaskType, ["producerId"] = created.ProducerId, ["maxAttempts"] = created.MaxAttempts
                 })), id, created.ProducerId);
             return created;
-        }, editToken, requires: JobCapability.Edit);
+    }
 
     // ------------------------------------------------------------------ the worker's side
 

@@ -51,18 +51,29 @@ public sealed class ActivityAccumulator
         double credited = 0;
         if (_last is { } previous)
         {
-            var gap = sample.ReceivedUtc - previous;
-            var creditedGap = gap > MaxCreditedGap ? MaxCreditedGap : gap;
-            credited = creditedGap.TotalSeconds;
-            _uncredited += (gap - creditedGap).TotalSeconds;
-
-            if (sample.State == ActivityState.Active) _active += credited;
-            else _idle += credited;
+            var (active, idle, uncredited) = Credit(sample.ReceivedUtc - previous, sample.State, MaxCreditedGap);
+            credited = active + idle;
+            _active += active;
+            _idle += idle;
+            _uncredited += uncredited;
         }
 
         _last = sample.ReceivedUtc;
         _count++;
         return credited;
+    }
+
+    /// <summary>
+    /// The one rule for turning a gap between heartbeats into time: the gap is credited to the new
+    /// heartbeat's state, up to the cap, and the remainder is uncredited. The in-memory accumulator and the
+    /// persisted session both use it, so they can never disagree.
+    /// </summary>
+    public static (double Active, double Idle, double Uncredited) Credit(TimeSpan gap, ActivityState state, TimeSpan maxCreditedGap)
+    {
+        if (gap < TimeSpan.Zero) gap = TimeSpan.Zero;
+        var credited = gap > maxCreditedGap ? maxCreditedGap : gap;
+        var uncredited = (gap - credited).TotalSeconds;
+        return state == ActivityState.Active ? (credited.TotalSeconds, 0, uncredited) : (0, credited.TotalSeconds, uncredited);
     }
 
     public static ActivityTotals Compute(string sessionId, IEnumerable<HeartbeatSample> samples, TimeSpan? heartbeatInterval = null)

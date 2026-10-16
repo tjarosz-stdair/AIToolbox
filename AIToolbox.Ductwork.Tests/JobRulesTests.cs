@@ -203,7 +203,9 @@ public class JobRulesTests
     private static readonly string[] ReadOnlyPrefixes = ["Get", "List", "Verify"];
 
     private static readonly Type[] DataLayer =
-        [typeof(JobRepository), typeof(EditLockService), typeof(AIToolbox.Ductwork.Core.Tasks.ProcessingTaskRepository)];
+        [typeof(JobRepository), typeof(EditLockService), typeof(AIToolbox.Ductwork.Core.Tasks.ProcessingTaskRepository),
+         typeof(AIToolbox.Ductwork.Core.Tasks.TaskBindingRepository), typeof(AIToolbox.Ductwork.Core.Counting.BuildingTypeRepository),
+         typeof(AIToolbox.Ductwork.Core.Counting.TaskResultIngestor), typeof(AIToolbox.Ductwork.Core.Activity.ActivityRepository)];
 
     private static IEnumerable<(Type Type, MethodInfo Method)> PublicMethods() =>
         DataLayer.SelectMany(type => type
@@ -237,11 +239,11 @@ public class JobRulesTests
     }
 
     [Fact]
-    public void The_only_data_changes_without_an_audit_event_are_the_liveness_heartbeats_and_each_says_why()
+    public void The_only_data_changes_without_an_audit_event_are_liveness_bookkeeping_and_each_says_why()
     {
         var exempt = PublicMethods().Where(x => x.Method.GetCustomAttribute<NoAuditAttribute>() is not null).ToList();
 
-        Assert.Equal(["EditLockService.HeartbeatAsync", "ProcessingTaskRepository.HeartbeatAsync"],
+        Assert.Equal(["ActivityRepository.EndSessionAsync", "ActivityRepository.RecordHeartbeatAsync", "EditLockService.HeartbeatAsync", "ProcessingTaskRepository.HeartbeatAsync"],
             exempt.Select(x => $"{x.Type.Name}.{x.Method.Name}").Order());
         Assert.All(exempt, x => Assert.False(string.IsNullOrWhiteSpace(x.Method.GetCustomAttribute<NoAuditAttribute>()!.Reason)));
     }

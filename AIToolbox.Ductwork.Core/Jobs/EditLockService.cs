@@ -330,6 +330,27 @@ public sealed class EditLockService
             return new EditToken(jobId, session, token);
         });
 
+    /// <summary>
+    /// Turns the fencing token a browser sent with a write into the token the data layer needs, if that
+    /// session still holds the lock under exactly that token. A browser holding an older token (the lock
+    /// changed hands since it last looked, even back to the same session) is refused and the refusal is
+    /// audited. The token proves the write was made from the state the editor last saw.
+    /// </summary>
+    public Task<EditToken> ResolveTokenAsync(long jobId, long claimedFencingToken, AuditContext context, CancellationToken cancellationToken = default) =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
+        {
+            var session = RequireSession(context);
+            var current = await ReadLockAsync(t.Connection, t.Transaction, jobId, forUpdate: false, t.Token);
+            if (current is null)
+                throw new StaleEditTokenException("You no longer hold the editing lock. Reload the job to continue.");
+            if (current.HolderSessionId != session || current.FencingToken != claimedFencingToken)
+                throw new StaleEditTokenException(
+                    $"Editing was taken over by {current.HolderDisplayName ?? current.HolderEmail}. Your view may be out of date; reload the latest.");
+            if (current.IsExpired)
+                throw new StaleEditTokenException("Your editing session expired. Reload the job to continue.");
+            return new EditToken(jobId, session, current.FencingToken);
+        }, requires: JobCapability.Edit);
+
     // ------------------------------------------------------------------ used by every content edit
 
     internal static async Task RequireValidTokenAsync(JobTxn t, EditToken editToken)
