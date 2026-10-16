@@ -1,6 +1,7 @@
 using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Data;
+using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Tasks;
 using AIToolbox.Web.Ductwork;
@@ -24,6 +25,7 @@ namespace AIToolbox.Web.Controllers.Ductwork;
 public sealed class DuctworkWorkerApiController(
     ProcessingTaskRepository tasks,
     TaskResultIngestor ingestor,
+    SheetRepository sheets,
     Func<CancellationToken, Task<SqlConnection>> open,
     LockSettings lockSettings,
     TaskSettings taskSettings,
@@ -116,6 +118,15 @@ public sealed class DuctworkWorkerApiController(
             accepted = result.Accepted, cancelled = result.Cancelled, entities = result.Entities, findings = result.Findings,
             buildingTypesCreated = result.BuildingTypesCreated, raisedAsFindings = result.RaisedAsFindings, batched = result.Batched
         });
+    }
+
+    /// <summary>The worker reports the pages it found in a drawing file, under the task it holds.</summary>
+    [HttpPost("tasks/{taskId:long}/sheets")]
+    public async Task<IActionResult> RegisterSheets(long taskId, [FromBody] WorkerSheetsRequest request, CancellationToken ct)
+    {
+        var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
+        var created = await sheets.RegisterFromTaskAsync(taskId, request.FileId, DuctworkSheetsController.ToNew(request.Sheets), worker, ct);
+        return DuctworkJson.Result(new { recorded = created.Count, duplicates = created.Count(s => s.DuplicateOfPublicId is not null) }, 201);
     }
 
     /// <summary>The worker reports that it could not finish. A retryable failure is queued again after a delay while attempts remain.</summary>

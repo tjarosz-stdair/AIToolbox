@@ -170,7 +170,7 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkWorkerApiController WorkerApi(int consumerId = 1, string consumerName = "worker-key", string[]? scopes = null, int bodyLimit = 0,
         Stream? body = null, IOptions<DuctworkOptions>? options = null)
     {
-        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
+        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
         var principal = ApiConsumer(consumerId, consumerName, scopes ?? [KnownApiScopes.DuctworkWorker, "tool:" + DuctworkTool.ToolKey]);
         With(controller, principal, null, null);
         if (body is not null)
@@ -234,6 +234,21 @@ public sealed class ApiHarness(DuctworkDatabase db)
         var tab = NewTab();
         var reply = await RunAsync(() => LockApi(email, tab).Acquire(jobId, default));
         return (tab, reply["fencingToken"].GetInt64());
+    }
+
+    public DuctworkSheetsController SheetsApi(string email, string tab, long? fencing = null) =>
+        With(new DuctworkSheetsController(JobRepo, LockService, new SheetRepository(Open)), Person(email), tab, fencing);
+
+    /// <summary>Uploads a small PDF through the real upload endpoints and returns its public file id.</summary>
+    public async Task<Guid> UploadedFileAsync(long jobId, string tab, long token, byte seed = 5)
+    {
+        var data = new byte[400];
+        Array.Fill(data, seed);
+        System.Text.Encoding.ASCII.GetBytes("%PDF-1.7\n").CopyTo(data, 0);
+        var begun = await RunAsync(() => UploadsApi(Editor, tab, token).Begin(jobId, new BeginUploadRequest("sheet-" + seed + ".pdf", data.Length, null), default));
+        var upload = begun["uploadId"].GetGuid();
+        await RunAsync(() => UploadsApi(Editor, tab, body: new MemoryStream(data)).Append(jobId, upload, 0, default));
+        return (await RunAsync(() => UploadsApi(Editor, tab, token).Complete(jobId, upload, default)))["fileId"].GetGuid();
     }
 
     public async Task<long> ProducerAsync(ProducerRef producer)

@@ -248,6 +248,8 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new TaskResultIngestor(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<ReviewLevelSettings>()));
 
+        services.AddSingleton(sp => new SheetRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
+
         services.AddHostedService<DuctworkMigrationService>();
         services.AddHostedService<DuctworkUploadSweepService>();
         return services;

@@ -46,3 +46,22 @@ public sealed record WorkerClaimRequest(string? WorkerName, string[]? TaskTypes)
 public sealed record WorkerHeartbeatRequest(string? WorkerName, int Done, int? Total, string? Message);
 
 public sealed record WorkerFailRequest(string? WorkerName, string? Error, bool Retryable);
+
+// ---- sheets and views
+
+public sealed record SheetBody(int PageNo, double WidthPts, double HeightPts, int Rotation, string? SheetNumber, string? Title, string? Discipline, string? Kind,
+    string? ContentHash, bool? HasTextLayer);
+
+public sealed record RegisterSheetsRequest(SheetBody[]? Sheets);
+
+public sealed record UpdateSheetRequest(string? SheetNumber, string? Title, string? Discipline, string? Kind, bool? InScope);
+
+public sealed record CreateViewRequest(string? Title, string? Floor, string? Type, long? BuildingTypeId, double[][]? Polygon);
+
+public sealed record UpdateViewRequest(string? Title, string? Floor, string? Type, long? BuildingTypeId, bool ClearBuildingType, double[][]? Polygon, bool ClearPolygon);
+
+public sealed record SetScaleRequest(double Ratio, string? Method, System.Text.Json.JsonElement? Calibration);
+
+public sealed record AddRegionRequest(string? Kind, string? Reason, double[][]? Polygon);
+
+public sealed record WorkerSheetsRequest(string? WorkerName, Guid FileId, SheetBody[]? Sheets);

@@ -206,7 +206,7 @@ public class JobRulesTests
         [typeof(JobRepository), typeof(EditLockService), typeof(AIToolbox.Ductwork.Core.Tasks.ProcessingTaskRepository),
          typeof(AIToolbox.Ductwork.Core.Tasks.TaskBindingRepository), typeof(AIToolbox.Ductwork.Core.Counting.BuildingTypeRepository),
          typeof(AIToolbox.Ductwork.Core.Counting.TaskResultIngestor), typeof(AIToolbox.Ductwork.Core.Activity.ActivityRepository),
-         typeof(AIToolbox.Ductwork.Core.Drawings.UploadService)];
+         typeof(AIToolbox.Ductwork.Core.Drawings.UploadService), typeof(AIToolbox.Ductwork.Core.Drawings.SheetRepository)];
 
     private static IEnumerable<(Type Type, MethodInfo Method)> PublicMethods() =>
         DataLayer.SelectMany(type => type
