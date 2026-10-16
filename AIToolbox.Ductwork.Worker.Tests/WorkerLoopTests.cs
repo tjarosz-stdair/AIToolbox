@@ -22,6 +22,9 @@ internal sealed class FakeApi : IDuctworkApi
     public TaskInput Input { get; set; } = new(0, 0, "x", null, [], [], []);
     public Dictionary<Guid, byte[]> Files { get; } = [];
     public int HandshakeCalls;
+    public bool ServerDrain { get; set; }
+
+    public Task<bool> GetDrainRequestedAsync(CancellationToken ct) => Task.FromResult(ServerDrain);
 
     public Task<HandshakeInfo> HandshakeAsync(IReadOnlyCollection<string> taskTypes, CancellationToken ct)
     {
@@ -351,6 +354,21 @@ public sealed class WorkerLoopTests : IDisposable
 
         Assert.Empty(api.Claims);
         Assert.Single(api.Queue);                                          // the waiting task was left for someone else
+    }
+
+    [Fact]
+    public async Task An_administrator_asking_for_a_drain_has_the_same_effect_as_the_drain_file()
+    {
+        var api = new FakeApi { ServerDrain = true };
+        api.Queue.Enqueue(api.NewTask());
+        var (service, lifetime) = Build(api, [new LambdaHandler("test", (c, ct) => OkManifest(c))], o => o.ExitWhenDrained = true);
+
+        await service.StartAsync(CancellationToken.None);
+        await EventuallyAsync(() => lifetime.StopRequested);
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.Empty(api.Claims);
+        Assert.Single(api.Queue);
     }
 
     [Fact]

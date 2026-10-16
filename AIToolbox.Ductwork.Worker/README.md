@@ -50,7 +50,7 @@ One worker process serves one instance. Several instances need several processes
 ## Draining for an upgrade
 
 Create an empty file named `drain` (`DrainFileName`) in the folder that holds the scratch folder. The worker takes no new
-tasks and lets the running ones finish; with `ExitWhenDrained` it then stops. Delete the file to resume. When the
+tasks and lets the running ones finish; with `ExitWhenDrained` it then stops. Delete the file to resume. An administrator can also ask this worker to drain from the Workers card on the Ductwork settings page; the worker checks that request each time it would ask for work, and it takes effect the same way. When the
 contract version changes, the handshake refuses a worker the server cannot accept, so upgrade the worker first (plan decision:
 the worker is upgraded before the server).
 

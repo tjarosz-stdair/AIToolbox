@@ -39,7 +39,7 @@ public sealed record BindTaskRequest(string? TaskType, long ProducerId, int Eval
 
 // ---- worker
 
-public sealed record WorkerHandshakeRequest(string? WorkerName, string? ContractVersion, string[]? TaskTypes);
+public sealed record WorkerHandshakeRequest(string? WorkerName, string? ContractVersion, string[]? TaskTypes, string? WorkerVersion = null, string? HostName = null, int? MaxConcurrency = null);
 
 public sealed record WorkerClaimRequest(string? WorkerName, string[]? TaskTypes);
 
@@ -60,6 +60,12 @@ public sealed record ReviewManyRequest(Guid[]? EntityIds, string? Status, string
 
 public sealed record AddEntityRequest(string? Type, string? Category, string? Tag, string? Size, string? Manufacturer, string? Model, string? CustomerPartCode, decimal? Quantity,
     string? Unit, long? BuildingTypeId, Guid? ViewId, string? Disposition, string? DispositionReason, double[]? Box, string? Evidence);
+
+// ---- workers
+
+public sealed record DrainWorkerRequest(bool Drain);
+
+public sealed record CreateWorkerKeyRequest(string? WorkerName);
 
 // ---- hosted vision
 

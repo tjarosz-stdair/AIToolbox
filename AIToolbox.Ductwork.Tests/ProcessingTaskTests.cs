@@ -186,7 +186,8 @@ public class ProcessingTaskTests(SqlFixture db) : IClassFixture<SqlFixture>
         var task = await EnqueueAsync(job, token, type);
         var claimed = (await tasks.ClaimNextAsync(W("worker-1"), [type]))!;
 
-        await Task.Delay(300);
+        // Long enough for the new expiry to be later than the old, short enough that a slow machine cannot let the 500 ms lease run out first.
+        await Task.Delay(120);
         var beat = await tasks.HeartbeatAsync(task.ProcessingTaskId, "worker-1", 3, 10, "page 3 of 10");
         Assert.True(beat.Continue);
 

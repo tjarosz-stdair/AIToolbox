@@ -12,6 +12,8 @@ namespace AIToolbox.Ductwork.Worker;
 public interface IDuctworkApi
 {
     Task<HandshakeInfo> HandshakeAsync(IReadOnlyCollection<string> taskTypes, CancellationToken ct);
+    /// <summary>Whether an administrator has asked this worker to finish its work and take no more.</summary>
+    Task<bool> GetDrainRequestedAsync(CancellationToken ct);
     Task<ClaimedTask?> ClaimAsync(IReadOnlyCollection<string> taskTypes, CancellationToken ct);
     Task<HeartbeatReply> HeartbeatAsync(long taskId, int done, int? total, string? message, CancellationToken ct);
     Task<TaskInput> GetInputAsync(long taskId, CancellationToken ct);
@@ -50,9 +52,19 @@ public sealed class DuctworkApiClient : IDuctworkApi
 
     private string Name => _options.WorkerName;
 
+    private static readonly string WorkerVersion = typeof(DuctworkApiClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+    public async Task<bool> GetDrainRequestedAsync(CancellationToken ct)
+    {
+        using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, $"{Base}status?workerName={Uri.EscapeDataString(Name)}"), ct);
+        await EnsureSuccessAsync(response, ct);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return doc.RootElement.TryGetProperty("drain", out var d) && d.ValueKind == JsonValueKind.True;
+    }
+
     public async Task<HandshakeInfo> HandshakeAsync(IReadOnlyCollection<string> taskTypes, CancellationToken ct)
     {
-        using var response = await SendAsync(() => Json(HttpMethod.Post, "handshake", new { workerName = Name, contractVersion = ContractInfo.Version, taskTypes }), ct);
+        using var response = await SendAsync(() => Json(HttpMethod.Post, "handshake", new { workerName = Name, contractVersion = ContractInfo.Version, taskTypes, workerVersion = WorkerVersion, hostName = Environment.MachineName, maxConcurrency = Math.Max(1, _options.MaxConcurrency) }), ct);
         if (response.StatusCode == HttpStatusCode.Conflict)
         {
             var body = await ReadErrorAsync(response, ct);

@@ -179,12 +179,12 @@ public class WorkerApiTests(DuctworkDatabase db) : IClassFixture<DuctworkDatabas
     [Fact]
     public async Task The_handshake_returns_the_leases_and_refuses_an_incompatible_contract_major_version()
     {
-        var ok = await RunAsync(() => Task.FromResult(_h.WorkerApi().Handshake(new WorkerHandshakeRequest("w1", ContractInfo.Version, null))));
+        var ok = await RunAsync(() => _h.WorkerApi().Handshake(new WorkerHandshakeRequest("w1", ContractInfo.Version, null), default));
         Assert.Equal(200, ok.Status);
         Assert.Equal(ContractInfo.Version, ok["serverContractVersion"].GetString());
         Assert.True(ok["heartbeatSeconds"].GetInt32() >= 1);
 
-        var bad = await RunAsync(() => Task.FromResult(_h.WorkerApi().Handshake(new WorkerHandshakeRequest("w1", "99.0.0", null))));
+        var bad = await RunAsync(() => _h.WorkerApi().Handshake(new WorkerHandshakeRequest("w1", "99.0.0", null), default));
         Assert.Equal((409, "contract-version"), (bad.Status, bad.Code));
     }
 

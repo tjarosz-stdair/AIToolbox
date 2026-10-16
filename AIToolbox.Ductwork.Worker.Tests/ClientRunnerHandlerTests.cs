@@ -55,6 +55,24 @@ public sealed class ApiClientTests
     }
 
     [Fact]
+    public async Task The_handshake_says_which_build_and_machine_this_is_and_the_drain_request_is_read_from_the_status_call()
+    {
+        var (client, http) = Build();
+        http.Script.Enqueue(_ => StubHttp.Json(HttpStatusCode.OK, """{"serverContractVersion":"0.1.0","leaseSeconds":120,"heartbeatSeconds":30,"lockHeartbeatSeconds":15,"maxResultBytes":1000}"""));
+        http.Script.Enqueue(_ => StubHttp.Json(HttpStatusCode.OK, """{"drain":true}"""));
+
+        await client.HandshakeAsync(["a"], default);
+        var drain = await client.GetDrainRequestedAsync(default);
+
+        using var hello = JsonDocument.Parse(http.Seen[0].Body);
+        Assert.False(string.IsNullOrWhiteSpace(hello.RootElement.GetProperty("workerVersion").GetString()));
+        Assert.Equal(Environment.MachineName, hello.RootElement.GetProperty("hostName").GetString());
+        Assert.True(hello.RootElement.GetProperty("maxConcurrency").GetInt32() >= 1);
+        Assert.True(drain);
+        Assert.EndsWith("/worker/status?workerName=w-1", http.Seen[1].Request.RequestUri!.ToString());
+    }
+
+    [Fact]
     public async Task Nothing_to_do_is_null_and_a_task_is_read_with_its_producer()
     {
         var (client, http) = Build();

@@ -175,7 +175,7 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkWorkerApiController WorkerApi(int consumerId = 1, string consumerName = "worker-key", string[]? scopes = null, int bodyLimit = 0,
         Stream? body = null, IOptions<DuctworkOptions>? options = null)
     {
-        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Uploads, new BuildingTypeRepository(Open), new DuctworkVisionGateway(new VisionRepository(Open), Providers, ProviderClient), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
+        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Uploads, new BuildingTypeRepository(Open), new DuctworkVisionGateway(new VisionRepository(Open), Providers, ProviderClient), Registry, Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
         var principal = ApiConsumer(consumerId, consumerName, scopes ?? [KnownApiScopes.DuctworkWorker, "tool:" + DuctworkTool.ToolKey]);
         With(controller, principal, null, null);
         if (body is not null)
@@ -256,11 +256,25 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkVisionAdminController VisionAdminApi() =>
         With(new DuctworkVisionAdminController(new VisionRepository(Open), Providers), Person(Admin, admin: true), NewTab(), null);
 
+    public WorkerRegistry Registry => new(Open);
+
+    /// <summary>The API consumers the instance has, in memory, so key creation can be tested without the rest of AIToolbox's database.</summary>
+    public FakeConsumers Consumers { get; } = new();
+
+    public DuctworkWorkersAdminController WorkersAdminApi(string scheme = "https", string host = "tools.example.com", string pathBase = "/aicompare")
+    {
+        var controller = With(new DuctworkWorkersAdminController(Registry, Consumers, new AIToolbox.Web.Security.ApiKeyService(Consumers)), Person(Admin, admin: true), NewTab(), null);
+        controller.HttpContext.Request.Scheme = scheme;
+        controller.HttpContext.Request.Host = new HostString(host);
+        controller.HttpContext.Request.PathBase = pathBase;
+        return controller;
+    }
+
     public DuctworkAppController AppPages(string email, bool admin = false) =>
         With(new DuctworkAppController(JobRepo), Person(email, admin), NewTab(), null);
 
     public DuctworkCatalogController CatalogApi(string email) =>
-        With(new DuctworkCatalogController(BindingRepo), Person(email), NewTab(), null);
+        With(new DuctworkCatalogController(BindingRepo, Registry), Person(email), NewTab(), null);
 
     public DuctworkRulesController RulesApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkRulesController(JobRepo, LockService, new RuleRepository(Open), new FindingRepository(Open), new SheetRepository(Open)), Person(email), tab, fencing);
@@ -344,4 +358,38 @@ public sealed class FakeProviderClient : IAiProviderClient
         Sent.Add(request);
         return Task.FromResult((OnImage ?? (_ => new DocumentPromptResult { ProviderId = request.Provider.Id, ProviderName = request.Provider.DisplayName, ResponseText = "ok" }))(request));
     }
+}
+
+/// <summary>An in-memory set of API consumers and keys.</summary>
+public sealed class FakeConsumers : IApiConsumerRepository
+{
+    public List<ApiConsumer> Consumers { get; } = [];
+    public List<ApiConsumerKey> Keys { get; } = [];
+    private int _next = 500;
+
+    public Task<IReadOnlyList<ApiConsumer>> GetConsumersAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ApiConsumer>>(Consumers.ToList());
+
+    public Task<ApiConsumer?> GetConsumerAsync(int id, CancellationToken cancellationToken = default) => Task.FromResult(Consumers.FirstOrDefault(c => c.Id == id));
+
+    public Task<int> CreateConsumerAsync(ApiConsumer consumer, CancellationToken cancellationToken = default)
+    {
+        consumer.Id = ++_next;
+        Consumers.Add(consumer);
+        return Task.FromResult(consumer.Id);
+    }
+
+    public Task UpdateConsumerAsync(ApiConsumer consumer, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task<ApiConsumerKey?> GetKeyByPrefixAsync(string keyPrefix, CancellationToken cancellationToken = default) => Task.FromResult(Keys.FirstOrDefault(k => k.KeyPrefix == keyPrefix));
+
+    public Task<int> CreateKeyAsync(ApiConsumerKey key, CancellationToken cancellationToken = default)
+    {
+        key.Id = ++_next;
+        Keys.Add(key);
+        return Task.FromResult(key.Id);
+    }
+
+    public Task RevokeKeyAsync(int keyId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task MarkKeyUsedAsync(int keyId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

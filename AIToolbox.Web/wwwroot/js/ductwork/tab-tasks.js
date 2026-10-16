@@ -8,17 +8,26 @@ const ACTIVE = new Set(["Queued", "Running"]);
 export async function render(container, ctx) {
   let timer = null;
   const paint = async () => {
-    const [types, tasks, approvals] = await Promise.all([
-      ctx.run(() => ctx.api.get("/task-types")), ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/tasks`)), ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/vision-approvals`))
+    const [types, tasks, approvals, workers] = await Promise.all([
+      ctx.run(() => ctx.api.get("/task-types")), ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/tasks`)), ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/vision-approvals`)),
+      ctx.run(() => ctx.api.get("/workers/summary"))
     ]);
     clear(container);
-    container.append(runCard(ctx, types || [], approvals || [], paint), tasksCard(ctx, tasks || [], paint));
+    container.append(...[workerNotice(workers, tasks || []), runCard(ctx, types || [], approvals || [], paint), tasksCard(ctx, tasks || [], paint)].filter(Boolean));
     clearTimeout(timer);
     if ((tasks || []).some((t) => ACTIVE.has(t.status))) timer = setTimeout(() => { if (container.isConnected) paint(); }, 3000);
   };
 
   await paint();
   return { dispose() { clearTimeout(timer); }, refresh: paint };
+}
+
+/** Queued work with nobody to do it looks exactly like slow work, so say so. Counts only: who the workers are is for administrators. */
+function workerNotice(workers, tasks) {
+  if (!workers || workers.online > 0) return null;
+  const waiting = tasks.some((t) => t.status === "Queued");
+  const why = workers.total === 0 ? "No worker has ever connected to this site." : workers.draining > 0 ? "The workers are finishing up and taking no new work." : "No worker has been heard from in the last minute.";
+  return h("div", { class: "alert alert-warning", role: "status" }, h("strong", {}, "No worker is connected. "), why, waiting ? " Work you have queued will wait until one is." : " Work you queue will wait until one is.", " Ask an administrator to check the workers under Ductwork settings.");
 }
 
 function runCard(ctx, types, approvals, repaint) {

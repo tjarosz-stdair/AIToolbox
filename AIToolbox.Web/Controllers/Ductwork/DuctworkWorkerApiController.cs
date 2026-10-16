@@ -5,6 +5,7 @@ using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Tasks;
 using AIToolbox.Web.Ductwork;
+using AIToolbox.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
@@ -29,6 +30,7 @@ public sealed class DuctworkWorkerApiController(
     UploadService uploads,
     BuildingTypeRepository buildingTypes,
     DuctworkVisionGateway vision,
+    WorkerRegistry registry,
     Func<CancellationToken, Task<SqlConnection>> open,
     LockSettings lockSettings,
     TaskSettings taskSettings,
@@ -39,9 +41,9 @@ public sealed class DuctworkWorkerApiController(
     /// major version is refused here, before it claims anything, rather than failing on its first result.
     /// </summary>
     [HttpPost("handshake")]
-    public IActionResult Handshake([FromBody] WorkerHandshakeRequest request)
+    public async Task<IActionResult> Handshake([FromBody] WorkerHandshakeRequest request, CancellationToken ct)
     {
-        _ = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
+        var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
         if (!ManifestRules.VersionCompatible(request.ContractVersion))
             return DuctworkJson.Result(new
             {
@@ -50,8 +52,13 @@ public sealed class DuctworkWorkerApiController(
                 serverContractVersion = ContractInfo.Version
             }, 409);
 
+        // An incompatible worker is refused above and never recorded: it is not a worker of this instance until it can do the work.
+        var recorded = await registry.RecordHandshakeAsync(ConsumerId, request.WorkerName!, new WorkerHello(request.ContractVersion ?? "", request.WorkerVersion, request.HostName, request.MaxConcurrency,
+            request.TaskTypes ?? []), worker, ct);
+
         return DuctworkJson.Result(new
         {
+            drain = recorded.DrainRequested,
             serverContractVersion = ContractInfo.Version,
             leaseSeconds = (int)taskSettings.LeaseDuration.TotalSeconds,
             heartbeatSeconds = (int)Math.Max(1, taskSettings.LeaseDuration.TotalSeconds / 4),
@@ -60,13 +67,30 @@ public sealed class DuctworkWorkerApiController(
         });
     }
 
+    /// <summary>Whether an administrator has asked this worker to finish what it has and take no more. A worker checks this between claims.</summary>
+    [HttpGet("status")]
+    public async Task<IActionResult> Status([FromQuery] string workerName, CancellationToken ct)
+    {
+        _ = DuctworkAuditContexts.ForWorker(HttpContext, workerName);
+        await registry.TouchAsync(ConsumerId, workerName, claimed: false, ct);
+        return DuctworkJson.Result(new { drain = await registry.GetDrainAsync(ConsumerId, workerName, ct) });
+    }
+
+    private int ConsumerId => HttpContext.User.GetApiConsumerId() ?? throw new DuctworkBadRequestException("A worker must authenticate with an API key.");
+
     /// <summary>Hands the oldest runnable task of the named types to this worker for a lease. No content when there is nothing to do.</summary>
     [HttpPost("tasks/claim")]
     public async Task<IActionResult> Claim([FromBody] WorkerClaimRequest request, CancellationToken ct)
     {
         var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
+        await registry.TouchAsync(ConsumerId, request.WorkerName!, claimed: false, ct);
+
+        // A worker asked to drain is given nothing new, whatever it asks for, so the instruction holds even for a worker that ignores it.
+        if (await registry.GetDrainAsync(ConsumerId, request.WorkerName!, ct)) return NoContent();
+
         var task = await tasks.ClaimNextAsync(worker, request.TaskTypes is { Length: > 0 } ? request.TaskTypes : null, ct);
         if (task is null) return NoContent();
+        await registry.TouchAsync(ConsumerId, request.WorkerName!, claimed: true, ct);
 
         // Tell the worker exactly which algorithm or model the task expects, so a result under another producer would be refused.
         await using var connection = await open(ct);
@@ -139,6 +163,7 @@ public sealed class DuctworkWorkerApiController(
     {
         var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
         var beat = await tasks.HeartbeatAsync(taskId, worker.ActorDisplayName!, request.Done, request.Total, request.Message, ct);
+        await registry.TouchAsync(ConsumerId, request.WorkerName!, claimed: false, ct);
         return DuctworkJson.Result(new { @continue = beat.Continue, cancelRequested = beat.CancelRequested });
     }
 
@@ -162,6 +187,7 @@ public sealed class DuctworkWorkerApiController(
             return DuctworkJson.Result(new { code = "too-large", error = $"The result is over the {limit:N0} byte limit." }, 413);
 
         var result = await ingestor.SubmitJsonAsync(taskId, worker, json, resultRef, ct);
+        await registry.TouchAsync(ConsumerId, workerName, claimed: false, ct);
         return DuctworkJson.Result(new
         {
             accepted = result.Accepted, cancelled = result.Cancelled, entities = result.Entities, findings = result.Findings,
@@ -204,6 +230,7 @@ public sealed class DuctworkWorkerApiController(
     {
         var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
         var accepted = await tasks.FailAsync(taskId, worker, request.Error ?? "The worker reported a failure without a message.", request.Retryable, ct);
+        await registry.TouchAsync(ConsumerId, request.WorkerName!, claimed: false, ct);
         return DuctworkJson.Result(new { accepted });
     }
 

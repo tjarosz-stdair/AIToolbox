@@ -16,7 +16,7 @@ public class WorkerContractTests(DuctworkDatabase db) : IClassFixture<DuctworkDa
     [Fact]
     public async Task The_workers_models_read_the_servers_handshake_claim_input_and_results()
     {
-        var handshake = Read<HandshakeInfo>(await RunAsync(() => Task.FromResult(_h.WorkerApi().Handshake(new WorkerHandshakeRequest("w1", ContractInfo.Version, null)))));
+        var handshake = Read<HandshakeInfo>(await RunAsync(() => _h.WorkerApi().Handshake(new WorkerHandshakeRequest("w1", ContractInfo.Version, null), default)));
         Assert.Equal((ContractInfo.Version, true), (handshake.ServerContractVersion, handshake.HeartbeatSeconds >= 1 && handshake.LeaseSeconds > handshake.HeartbeatSeconds));
 
         var producerRef = ProducerRef.Algorithm("contract-" + Guid.NewGuid().ToString("N")[..6], "1.0", "h");
@@ -63,6 +63,7 @@ public class WorkerContractTests(DuctworkDatabase db) : IClassFixture<DuctworkDa
     /// <summary>Only the input call is needed by the fake handler.</summary>
     private sealed class NullApi(TaskInput input) : IDuctworkApi
     {
+        public Task<bool> GetDrainRequestedAsync(CancellationToken ct) => Task.FromResult(false);
         public Task<TaskInput> GetInputAsync(long taskId, CancellationToken ct) => Task.FromResult(input);
         public Task<HandshakeInfo> HandshakeAsync(IReadOnlyCollection<string> taskTypes, CancellationToken ct) => throw new NotSupportedException();
         public Task<ClaimedTask?> ClaimAsync(IReadOnlyCollection<string> taskTypes, CancellationToken ct) => throw new NotSupportedException();

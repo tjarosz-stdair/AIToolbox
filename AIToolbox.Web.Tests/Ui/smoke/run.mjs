@@ -151,6 +151,29 @@ try {
   const fill = (selector, value) => s.eval(`(() => { const i = document.querySelector(${JSON.stringify(selector)}); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const until = async (fn, what, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return; await new Promise((r) => setTimeout(r, 100)); } throw new Error(`Timed out waiting for ${what}`); };
 
+  await step("admin lists workers, drains one, and shows the key once", async () => {
+    await s.navigate(`${base}/Ductwork/Admin`);
+    await expectText("Workers", "farm-1", "FARM-01", "Online", "1 running, up to 2");
+    await clickButton("Drain");
+    await s.waitFor("document.querySelector('.dw-dialog')", 5000, "the drain confirmation");
+    await clickButton("Drain", "document.querySelector('.dw-dialog')");
+    await expectText("Draining", "Resume");
+    await clickButton("Create worker key");
+    await s.waitFor("document.querySelector('.dw-dialog input')", 5000, "the key dialog");
+    await fill(".dw-dialog input", "farm-2");
+    await clickButton("Create", "document.querySelector('.dw-dialog')");
+    await expectText("shown only once");
+    const shown = await s.eval("document.querySelector('.dw-dialog textarea').value");
+    if (!shown.includes("aitb_SMOKE") || !shown.includes("farm-2")) throw new Error(`The settings do not carry the key and name: ${shown}`);
+    await clickButton("I have copied it", "document.querySelector('.dw-dialog')");
+  });
+
+  await step("detection tab warns when no worker is connected", async () => {
+    await s.navigate(`${base}/Ductwork/Jobs/1`);
+    await s.waitFor("document.querySelector('.dw-tabs') && document.querySelector('.dw-tabpane')", 20000, "the workbench");
+    await tab("tasks", "No worker is connected", "taking no new work");
+  });
+
   await step("a multiplier is confirmed from the setup tab", async () => {
     await tab("setup", "Type 5");
     await s.eval("(() => { const row = [...document.querySelectorAll('tr')].find((r) => r.innerText.includes('Type 5')); [...row.querySelectorAll('button')].find((b) => b.textContent === 'Set count').click(); })()");

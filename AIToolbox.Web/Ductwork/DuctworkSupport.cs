@@ -253,6 +253,7 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new TaskResultIngestor(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<ReviewLevelSettings>()));
 
+        services.AddSingleton(sp => new WorkerRegistry(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new VisionRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddScoped<DuctworkVisionGateway>();
         services.AddSingleton(sp => new RuleRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));

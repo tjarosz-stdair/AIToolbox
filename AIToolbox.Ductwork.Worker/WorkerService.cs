@@ -37,7 +37,17 @@ public sealed class WorkerService : BackgroundService
 
     private string DrainPath => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_options.ScratchRoot.TrimEnd('/', '\\'))) ?? ".", _options.DrainFileName);
 
-    private bool Draining => File.Exists(DrainPath);
+    private bool _serverDrain;
+
+    /// <summary>Told to drain by the local drain file or by an administrator on the server.</summary>
+    private bool Draining => _serverDrain || File.Exists(DrainPath);
+
+    private async Task RefreshServerDrainAsync(CancellationToken ct)
+    {
+        try { _serverDrain = await _api.GetDrainRequestedAsync(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException) { _logger.LogDebug("Could not check the drain request: {Message}", ex.Message); }   // keep the last known answer
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -61,6 +71,7 @@ public sealed class WorkerService : BackgroundService
             {
                 foreach (var done in running.Keys.Where(t => t.IsCompleted).ToList()) running.Remove(done);
 
+                await RefreshServerDrainAsync(stoppingToken);
                 if (Draining)
                 {
                     if (running.Count == 0 && _options.ExitWhenDrained)

@@ -3,7 +3,7 @@
 
 import { createApi } from "./api.js";
 import { antiforgeryFrom, readBoot } from "./boot.js";
-import { h, clear, field, select, badge, titleCase, fmtDate, toast, confirmDialog } from "./util.js";
+import { h, clear, field, select, badge, titleCase, fmtDate, toast, confirmDialog, dialog } from "./util.js";
 
 export async function startAdmin(root, boot = readBoot(), api = createApi({ base: boot.api, antiforgery: antiforgeryFrom() })) {
   const run = async (fn, ok) => {
@@ -11,16 +11,78 @@ export async function startAdmin(root, boot = readBoot(), api = createApi({ base
   };
 
   const paint = async () => {
-    const [bindings, producers, vision] = await Promise.all([run(() => api.get("/admin/task-bindings")), run(() => api.get("/admin/task-bindings/producers")), run(() => api.get("/admin/vision-policy"))]);
+    const [bindings, producers, vision, workers] = await Promise.all([run(() => api.get("/admin/task-bindings")), run(() => api.get("/admin/task-bindings/producers")), run(() => api.get("/admin/vision-policy")), run(() => api.get("/admin/workers"))]);
     clear(root);
     root.append(
-      h("div", { class: "page-heading" }, h("div", {}, h("h1", {}, "Ductwork settings"), h("p", { class: "text-muted mb-0" }, "Switch on the kinds of work that have been measured, and control hosted vision.")),
+      h("div", { class: "page-heading" }, h("div", {}, h("h1", {}, "Ductwork settings"), h("p", { class: "text-muted mb-0" }, "Connect workers, switch on the kinds of work that have been measured, and control hosted vision.")),
         h("a", { class: "btn btn-outline-secondary btn-sm", href: boot.base }, "← Jobs")),
+      workersCard(api, run, workers, paint, boot),
       bindingsCard(api, run, bindings || [], producers || [], paint),
       visionCard(api, run, vision, paint));
   };
 
   await paint();
+}
+
+const WORKER_KIND = { Online: "success", Draining: "warning", Drained: "secondary", Offline: "danger" };
+
+function ago(seconds) {
+  if (seconds < 90) return `${seconds}s ago`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)} min ago`;
+  return seconds < 172800 ? `${Math.round(seconds / 3600)} h ago` : `${Math.round(seconds / 86400)} days ago`;
+}
+
+function workersCard(api, run, workers, repaint, boot) {
+  if (!workers) return h("div", { class: "dw-card" }, h("h2", {}, "Workers"), h("p", { class: "text-danger" }, "The workers could not be loaded."));
+  const consumersHref = boot.base.replace(/\/Ductwork\/?$/i, "") + "/Admin/ApiConsumers";
+
+  const drain = async (w, on) => {
+    if (on && !(await confirmDialog(`Ask ${w.workerName} to finish what it is doing and take no more work? Use this before upgrading it. You can lift the request at any time.`, { ok: "Drain", kind: "danger" }))) return;
+    if (await run(() => api.post(`/admin/workers/${w.workerInstanceId}/drain`, { drain: on }), on ? "Asked to drain. It stops taking work now." : "Drain lifted.")) repaint();
+  };
+  const forget = async (w) => {
+    if (await confirmDialog(`Forget ${w.workerName}? It is listed again if it reconnects. Its key keeps working; revoke that under API Consumers.`, { ok: "Forget", kind: "danger" })
+      && await run(() => api.del(`/admin/workers/${w.workerInstanceId}`), "Forgotten.")) repaint();
+  };
+
+  const row = (w) => h("tr", {},
+    h("td", {}, h("strong", {}, w.workerName), h("div", { class: "small text-muted" }, w.hostName || "unknown machine"), w.keyEnabled === false ? h("div", { class: "small text-danger" }, "its key is switched off") : null),
+    h("td", {}, badge(w.status, WORKER_KIND[w.status] || "light"), h("div", { class: "small text-muted" }, `seen ${ago(w.secondsSinceSeen)}`)),
+    h("td", { class: "small" }, `${w.runningTasks} running, up to ${w.maxConcurrency || "?"}`, w.lastClaimUtc ? h("div", { class: "text-muted" }, `last took work ${fmtDate(w.lastClaimUtc)}`) : null),
+    h("td", { class: "small" }, w.workerVersion || "?", h("div", { class: "text-muted" }, (w.taskTypes || []).join(", ") || "no task types")),
+    h("td", { class: "small" }, w.drainRequested ? `Drain asked by ${w.drainRequestedBy || "?"}, ${fmtDate(w.drainRequestedUtc)}` : ""),
+    h("td", { class: "text-end text-nowrap" },
+      w.drainRequested ? h("button", { class: "btn btn-outline-primary btn-sm me-1", type: "button", onclick: () => drain(w, false) }, "Resume")
+        : h("button", { class: "btn btn-outline-secondary btn-sm me-1", type: "button", onclick: () => drain(w, true) }, "Drain"),
+      h("button", { class: "btn btn-outline-danger btn-sm", type: "button", disabled: w.status === "Online" || w.status === "Draining", title: "Only a worker that has gone can be forgotten", onclick: () => forget(w) }, "Forget")));
+
+  return h("div", { class: "dw-card" },
+    h("div", { class: "d-flex justify-content-between align-items-center" }, h("h2", {}, "Workers"),
+      h("div", {}, h("button", { class: "btn btn-outline-secondary btn-sm me-1", type: "button", onclick: repaint }, "Refresh"), h("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => createKey(api, run, consumersHref, repaint) }, "Create worker key"))),
+    h("p", { class: "text-muted small" }, "Workers do the reading: they connect to this site with their own key, take queued work and hand back proposals. They hold no database access or provider keys. A worker is online if it was heard from in the last minute."),
+    workers.length ? h("table", { class: "table table-sm align-middle" },
+      h("thead", {}, h("tr", {}, ["Worker", "Status", "Work", "Build and task types", "Drain", ""].map((t) => h("th", {}, t)))), h("tbody", {}, workers.map(row)))
+      : h("p", { class: "text-muted" }, "No worker has connected yet. Create a key, put the settings it gives you on the worker machine, and start it."));
+}
+
+async function createKey(api, run, consumersHref, repaint) {
+  const name = h("input", { class: "form-control form-control-sm", maxlength: 60, placeholder: "for example farm-1", "aria-label": "Worker name" });
+  const made = await dialog({
+    title: "Create a worker key", body: h("div", {}, h("p", { class: "small" }, "The key can do only what a worker needs: take Ductwork work and report on it. Name the worker after the machine it will run on."), field("Worker name", name, "Letters, digits, dashes, underscores and dots.")),
+    actions: [{ label: "Cancel" }, { label: "Create", kind: "primary", validate: () => (/^[A-Za-z0-9._-]{1,60}$/.test(name.value.trim()) ? null : "A worker name is 1 to 60 letters, digits, dashes, underscores or dots.") }]
+  });
+  if (made !== "Create") return;
+  const key = await run(() => api.post("/admin/workers/keys", { workerName: name.value.trim() }));
+  if (!key) return;
+  const box = h("textarea", { class: "form-control font-monospace", rows: 9, readonly: true, "aria-label": "Worker settings" }, key.settings);
+  await dialog({
+    title: "Worker key created", wide: true,
+    body: h("div", {}, h("p", { class: "text-danger small mb-2" }, "Copy this now. The key is shown only once and cannot be read again."),
+      box, h("button", { class: "btn btn-outline-secondary btn-sm mt-2 me-2", type: "button", onclick: async () => { try { await navigator.clipboard.writeText(key.settings); toast("Copied.", "success", 2000); } catch { box.select(); toast("Select the text and copy it.", "info"); } } }, "Copy"),
+      h("a", { class: "small", href: consumersHref }, "Manage it under API Consumers")),
+    actions: [{ label: "I have copied it", kind: "primary" }]
+  });
+  repaint();
 }
 
 function bindingsCard(api, run, bindings, producers, repaint) {
