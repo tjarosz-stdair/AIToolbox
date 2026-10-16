@@ -50,6 +50,14 @@ public sealed record AuditContext
         CorrelationId = correlationId
     };
 
+    /// <summary>A worker process acting on a task. It is not a user, so job membership does not apply to it.</summary>
+    public static AuditContext ForWorker(string workerId, string? reason = null) => new()
+    {
+        ActorType = ActorType.Worker,
+        ActorDisplayName = workerId,
+        Reason = reason
+    };
+
     /// <summary>The same context with a reason for one action.</summary>
     public AuditContext WithReason(string? reason) => this with { Reason = reason };
 

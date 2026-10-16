@@ -25,10 +25,19 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
         return (await repo.GetAsync(job.JobId))!;
     }
 
+    private EditLockService Locks(LockSettings? settings = null) => new(db.ConnectionString, settings);
+
+    private async Task<EditToken> TokenAsync(long jobId, string email = Editor)
+    {
+        var result = await Locks().AcquireAsync(jobId, Ctx(email));
+        return result.Token ?? throw new InvalidOperationException($"{email} could not take the lock: held by {result.Holder?.HolderEmail}.");
+    }
+
     private async Task FinishAllStepsAsync(JobRepository repo, long jobId)
     {
+        var tok = await TokenAsync(jobId);
         foreach (var step in Enum.GetValues<WorkflowStep>())
-            await repo.SetWorkflowStepAsync(jobId, step, StepStatus.Done, Ctx(Editor));
+            await repo.SetWorkflowStepAsync(jobId, step, StepStatus.Done, tok, Ctx(Editor));
     }
 
     private async Task<JobRecord> CompleteAsync(JobRepository repo, long jobId)
@@ -88,9 +97,10 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
 
         var updated = await repo.UpdateDetailsAsync(job.JobId,
-            new JobDetails { Name = "Renamed", ProjectName = "Phase 2", CustomerName = job.CustomerName }, job.StateVersion, Ctx(Editor));
+            new JobDetails { Name = "Renamed", ProjectName = "Phase 2", CustomerName = job.CustomerName }, job.StateVersion, tok, Ctx(Editor));
 
         Assert.Equal(("Renamed", "Phase 2", "Acme Homes"), (updated.Name, updated.ProjectName, updated.CustomerName));
         Assert.True(updated.StateVersion > job.StateVersion);
@@ -108,13 +118,14 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
         var eventsBefore = (await repo.ListAuditAsync(job.JobId)).Count;
 
-        var same = await repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = job.Name }, job.StateVersion, Ctx(Editor));
-        await repo.SetReviewLevelAsync(job.JobId, job.ReviewLevel, Ctx(Editor));
+        var same = await repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = job.Name }, job.StateVersion, tok, Ctx(Editor));
+        await repo.SetReviewLevelAsync(job.JobId, job.ReviewLevel, tok, Ctx(Editor));
         await repo.AddTagAsync(job.JobId, "Orion", Ctx(Editor));
         await repo.AddTagAsync(job.JobId, "  orion ", Ctx(Editor));   // the same tag again
-        await repo.SetWorkflowStepAsync(job.JobId, WorkflowStep.Setup, StepStatus.NotStarted, Ctx(Editor));
+        await repo.SetWorkflowStepAsync(job.JobId, WorkflowStep.Setup, StepStatus.NotStarted, tok, Ctx(Editor));
 
         Assert.Equal(job.StateVersion + 1, (await repo.GetAsync(job.JobId))!.StateVersion);   // only the tag counted
         Assert.Equal(eventsBefore + 1, (await repo.ListAuditAsync(job.JobId)).Count);
@@ -126,12 +137,13 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
 
-        var cleared = await repo.UpdateDetailsAsync(job.JobId, new JobDetails { Clear = new HashSet<string> { "CustomerName" } }, job.StateVersion, Ctx(Owner));
+        var cleared = await repo.UpdateDetailsAsync(job.JobId, new JobDetails { Clear = new HashSet<string> { "CustomerName" } }, job.StateVersion, tok, Ctx(Editor));
         Assert.Null(cleared.CustomerName);
 
         await Assert.ThrowsAsync<JobRuleViolationException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = " " }, cleared.StateVersion, Ctx(Owner)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = " " }, cleared.StateVersion, tok, Ctx(Editor)));
     }
 
     [Fact]
@@ -139,10 +151,11 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
-        await repo.UpdateDetailsAsync(job.JobId, new JobDetails { ProjectName = "first" }, job.StateVersion, Ctx(Owner));
+        var tok = await TokenAsync(job.JobId);
+        await repo.UpdateDetailsAsync(job.JobId, new JobDetails { ProjectName = "first" }, job.StateVersion, tok, Ctx(Editor));
 
         var ex = await Assert.ThrowsAsync<JobConcurrencyException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { ProjectName = "second" }, job.StateVersion, Ctx(Editor)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { ProjectName = "second" }, job.StateVersion, tok, Ctx(Editor)));
         Assert.Contains("Reload", ex.Message);
         Assert.Equal("first", (await repo.GetAsync(job.JobId))!.ProjectName);
     }
@@ -152,12 +165,13 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
 
         var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(async i =>
         {
             try
             {
-                await Repo().UpdateDetailsAsync(job.JobId, new JobDetails { ProjectName = "p" + i }, job.StateVersion, Ctx(Editor));
+                await Repo().UpdateDetailsAsync(job.JobId, new JobDetails { ProjectName = "p" + i }, job.StateVersion, tok, Ctx(Editor));
                 return true;
             }
             catch (JobConcurrencyException)
@@ -175,14 +189,15 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
         var events = (await repo.ListAuditAsync(job.JobId)).Count;
 
         await Assert.ThrowsAsync<JobAccessDeniedException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, job.StateVersion, Ctx(Viewer)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, job.StateVersion, tok, Ctx(Viewer)));
         await Assert.ThrowsAsync<JobAccessDeniedException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, job.StateVersion, Ctx(Stranger)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, job.StateVersion, tok, Ctx(Stranger)));
         await Assert.ThrowsAsync<JobAccessDeniedException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, job.StateVersion, Ctx(Stranger, admin: true)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, job.StateVersion, tok, Ctx(Stranger, admin: true)));
 
         Assert.Equal(events, (await repo.ListAuditAsync(job.JobId)).Count);
         Assert.Equal(job.StateVersion, (await repo.GetAsync(job.JobId))!.StateVersion);
@@ -191,8 +206,10 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     [Fact]
     public async Task A_missing_job_is_reported_as_missing()
     {
+        var real = await NewJobAsync();
+        var tok = await TokenAsync(real.JobId);
         await Assert.ThrowsAsync<JobNotFoundException>(() =>
-            Repo().UpdateDetailsAsync(long.MaxValue, new JobDetails { Name = "x" }, 1, Ctx(Owner)));
+            Repo().UpdateDetailsAsync(long.MaxValue, new JobDetails { Name = "x" }, 1, tok, Ctx(Editor)));
         Assert.Null(await Repo().GetAsync(long.MaxValue));
     }
 
@@ -201,8 +218,9 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
 
-        var level = await repo.SetReviewLevelAsync(job.JobId, ReviewLevel.Insensitive, Ctx(Editor));
+        var level = await repo.SetReviewLevelAsync(job.JobId, ReviewLevel.Insensitive, tok, Ctx(Editor));
         var baseline = await repo.SetBaselineManualHoursAsync(job.JobId, 6.5m, Ctx(Editor));
 
         Assert.Equal(ReviewLevel.Insensitive, level.ReviewLevel);
@@ -235,6 +253,7 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
 
         await Assert.ThrowsAsync<JobRuleViolationException>(() => repo.RemoveMemberAsync(job.JobId, Owner, Ctx(Owner)));
         await Assert.ThrowsAsync<JobRuleViolationException>(() => repo.ChangeMemberRoleAsync(job.JobId, Owner, JobRole.Editor, Ctx(Owner)));
@@ -247,7 +266,7 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
         Assert.DoesNotContain(await repo.GetMembersAsync(job.JobId), m => m.UserEmail == Owner);
         // The person who was removed can no longer act on the job.
         await Assert.ThrowsAsync<JobAccessDeniedException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, after.StateVersion, Ctx(Owner)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, after.StateVersion, tok, Ctx(Owner)));
     }
 
     // ---- tags
@@ -311,6 +330,7 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
 
         var early = await Assert.ThrowsAsync<JobRuleViolationException>(() => repo.BeginCompleteAsync(job.JobId, Ctx(Editor)));
         Assert.Contains("close it instead", early.Message);
@@ -321,7 +341,7 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
 
         // A job that is completing is held still: no edits and no second completion.
         await Assert.ThrowsAsync<JobRuleViolationException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, completing.StateVersion, Ctx(Editor)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, completing.StateVersion, tok, Ctx(Editor)));
         await Assert.ThrowsAsync<JobRuleViolationException>(() => repo.BeginCompleteAsync(job.JobId, Ctx(Editor)));
 
         var done = await repo.FinishCompleteAsync(job.JobId, Ctx(Editor));
@@ -329,9 +349,9 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
         Assert.NotNull(done.CompletedUtc);
 
         await Assert.ThrowsAsync<JobRuleViolationException>(() =>
-            repo.SetWorkflowStepAsync(job.JobId, WorkflowStep.Review, StepStatus.Active, Ctx(Editor)));
+            repo.SetWorkflowStepAsync(job.JobId, WorkflowStep.Review, StepStatus.Active, tok, Ctx(Editor)));
         await Assert.ThrowsAsync<JobRuleViolationException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, done.StateVersion, Ctx(Editor)));
+            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "x" }, done.StateVersion, tok, Ctx(Editor)));
         Assert.True((await repo.VerifyAuditChainAsync(job.JobId)).IsValid);
     }
 
@@ -436,8 +456,9 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
         await repo.AddTagAsync(job.JobId, "A", Ctx(Editor));
-        await repo.SetReviewLevelAsync(job.JobId, ReviewLevel.Normal, Ctx(Editor));
+        await repo.SetReviewLevelAsync(job.JobId, ReviewLevel.Normal, tok, Ctx(Editor));
         await repo.RemoveTagAsync(job.JobId, "A", Ctx(Editor));
 
         var events = await repo.ListAuditAsync(job.JobId);
@@ -555,15 +576,15 @@ public class JobRepositoryTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var repo = Repo();
         var job = await NewJobAsync(repo);
+        var tok = await TokenAsync(job.JobId);
         var events = (await repo.ListAuditAsync(job.JobId)).Count;
 
         // A system actor whose display name is too long for the audit column makes the audit insert fail.
         var broken = AuditContext.ForSystem(new string('x', 400));
-        await Assert.ThrowsAsync<SqlException>(() =>
-            repo.UpdateDetailsAsync(job.JobId, new JobDetails { Name = "should not stick" }, job.StateVersion, broken));
+        await Assert.ThrowsAsync<SqlException>(() => repo.SetBaselineManualHoursAsync(job.JobId, 42m, broken));
 
         var after = (await repo.GetAsync(job.JobId))!;
-        Assert.Equal(job.Name, after.Name);
+        Assert.Null(after.BaselineManualHours);
         Assert.Equal(job.StateVersion, after.StateVersion);
         Assert.Equal(events, (await repo.ListAuditAsync(job.JobId)).Count);
     }

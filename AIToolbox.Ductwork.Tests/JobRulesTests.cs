@@ -200,16 +200,25 @@ public class JobRulesTests
 
     // ---- architecture: no mutation without an audit context
 
-    [Fact]
-    public void Every_public_method_that_changes_data_takes_an_audit_context()
-    {
-        string[] readOnlyPrefixes = ["Get", "List", "Verify"];
-        var offenders = typeof(JobRepository)
+    private static readonly string[] ReadOnlyPrefixes = ["Get", "List", "Verify"];
+
+    private static readonly Type[] DataLayer =
+        [typeof(JobRepository), typeof(EditLockService), typeof(AIToolbox.Ductwork.Core.Tasks.ProcessingTaskRepository)];
+
+    private static IEnumerable<(Type Type, MethodInfo Method)> PublicMethods() =>
+        DataLayer.SelectMany(type => type
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
-            .Where(m => !readOnlyPrefixes.Any(p => m.Name.StartsWith(p, StringComparison.Ordinal)))
-            .Where(m => m.GetParameters().All(p => p.ParameterType != typeof(AuditContext)))
-            .Select(m => m.Name)
+            .Select(m => (type, m)));
+
+    [Fact]
+    public void Every_public_method_that_changes_data_takes_an_audit_context_or_says_why_it_does_not()
+    {
+        var offenders = PublicMethods()
+            .Where(x => !ReadOnlyPrefixes.Any(p => x.Method.Name.StartsWith(p, StringComparison.Ordinal)))
+            .Where(x => x.Method.GetCustomAttribute<NoAuditAttribute>() is null)
+            .Where(x => x.Method.GetParameters().All(p => p.ParameterType != typeof(AuditContext)))
+            .Select(x => $"{x.Type.Name}.{x.Method.Name}")
             .ToList();
 
         Assert.Empty(offenders);
@@ -218,14 +227,22 @@ public class JobRulesTests
     [Fact]
     public void Read_only_methods_do_not_take_an_audit_context_so_the_naming_rule_is_honest()
     {
-        string[] readOnlyPrefixes = ["Get", "List", "Verify"];
-        var mislabelled = typeof(JobRepository)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Where(m => readOnlyPrefixes.Any(p => m.Name.StartsWith(p, StringComparison.Ordinal)))
-            .Where(m => m.GetParameters().Any(p => p.ParameterType == typeof(AuditContext)))
-            .Select(m => m.Name)
+        var mislabelled = PublicMethods()
+            .Where(x => ReadOnlyPrefixes.Any(p => x.Method.Name.StartsWith(p, StringComparison.Ordinal)))
+            .Where(x => x.Method.GetParameters().Any(p => p.ParameterType == typeof(AuditContext)))
+            .Select(x => $"{x.Type.Name}.{x.Method.Name}")
             .ToList();
 
         Assert.Empty(mislabelled);
+    }
+
+    [Fact]
+    public void The_only_data_changes_without_an_audit_event_are_the_liveness_heartbeats_and_each_says_why()
+    {
+        var exempt = PublicMethods().Where(x => x.Method.GetCustomAttribute<NoAuditAttribute>() is not null).ToList();
+
+        Assert.Equal(["EditLockService.HeartbeatAsync", "ProcessingTaskRepository.HeartbeatAsync"],
+            exempt.Select(x => $"{x.Type.Name}.{x.Method.Name}").Order());
+        Assert.All(exempt, x => Assert.False(string.IsNullOrWhiteSpace(x.Method.GetCustomAttribute<NoAuditAttribute>()!.Reason)));
     }
 }

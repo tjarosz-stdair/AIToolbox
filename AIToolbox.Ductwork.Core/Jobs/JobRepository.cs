@@ -196,9 +196,9 @@ public sealed class JobRepository
 
     // ------------------------------------------------------------------ header details
 
-    public Task<JobRecord> UpdateDetailsAsync(long jobId, JobDetails details, long expectedStateVersion, AuditContext context,
-        CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+    public Task<JobRecord> UpdateDetailsAsync(long jobId, JobDetails details, long expectedStateVersion, EditToken editToken,
+        AuditContext context, CancellationToken cancellationToken = default) =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Edit);
             t.RequireEditable();
@@ -229,10 +229,10 @@ public sealed class JobRepository
             await t.AuditAsync(version, new AuditEntry("lifecycle", "job.edited", "Edited the job details.", "Job",
                 t.Job.PublicId.ToString("D"), Json(before), Json(after)));
             return await t.ReloadAsync();
-        });
+        }, editToken, requires: JobCapability.Edit);
 
-    public Task<JobRecord> SetReviewLevelAsync(long jobId, ReviewLevel level, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+    public Task<JobRecord> SetReviewLevelAsync(long jobId, ReviewLevel level, EditToken editToken, AuditContext context, CancellationToken cancellationToken = default) =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Edit);
             t.RequireEditable();
@@ -244,11 +244,11 @@ public sealed class JobRepository
                 Json(new Dictionary<string, object?> { ["reviewLevel"] = t.Job.ReviewLevel.ToString() }),
                 Json(new Dictionary<string, object?> { ["reviewLevel"] = level.ToString() })));
             return await t.ReloadAsync();
-        });
+        }, editToken, requires: JobCapability.Edit);
 
     /// <summary>The estimator's own estimate of the manual time, used for ROI (plan section 10.1). It is metadata, so it can change after completion.</summary>
     public Task<JobRecord> SetBaselineManualHoursAsync(long jobId, decimal? hours, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Edit);
             t.RequireMetadataChange();
@@ -267,7 +267,7 @@ public sealed class JobRepository
 
     public Task<IReadOnlyList<JobMemberRecord>> AddMemberAsync(long jobId, string email, JobRole role, AuditContext context,
         CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.ManageMembers);
             t.RequireMetadataChange();
@@ -288,7 +288,7 @@ public sealed class JobRepository
 
     public Task<IReadOnlyList<JobMemberRecord>> ChangeMemberRoleAsync(long jobId, string email, JobRole role, AuditContext context,
         CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.ManageMembers);
             t.RequireMetadataChange();
@@ -314,7 +314,7 @@ public sealed class JobRepository
 
     public Task<IReadOnlyList<JobMemberRecord>> RemoveMemberAsync(long jobId, string email, AuditContext context,
         CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.ManageMembers);
             t.RequireMetadataChange();
@@ -339,7 +339,7 @@ public sealed class JobRepository
 
     /// <summary>Tags are header metadata: editors can change them on a Complete, Closed or Archived job without reopening it.</summary>
     public Task<IReadOnlyList<string>> AddTagAsync(long jobId, string tag, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Tag);
             t.RequireMetadataChange();
@@ -363,7 +363,7 @@ public sealed class JobRepository
         });
 
     public Task<IReadOnlyList<string>> RemoveTagAsync(long jobId, string tag, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Tag);
             t.RequireMetadataChange();
@@ -388,8 +388,8 @@ public sealed class JobRepository
     // ------------------------------------------------------------------ workflow and lifecycle
 
     public Task<IReadOnlyDictionary<string, StepStatus>> SetWorkflowStepAsync(long jobId, WorkflowStep step, StepStatus status,
-        AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        EditToken editToken, AuditContext context, CancellationToken cancellationToken = default) =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Edit);
             t.RequireEditable();
@@ -406,11 +406,11 @@ public sealed class JobRepository
                 Json(new Dictionary<string, object?> { ["step"] = step.ToString(), ["status"] = old.ToString() }),
                 Json(new Dictionary<string, object?> { ["step"] = step.ToString(), ["status"] = status.ToString() })));
             return await ReadStepsAsync(t.Connection, t.Transaction, jobId, t.Token);
-        });
+        }, editToken, requires: JobCapability.Edit);
 
     /// <summary>Starts completing: the job becomes read-only while the issued reports are made. A failed report run leaves it Completing, never silently Complete.</summary>
     public Task<JobRecord> BeginCompleteAsync(long jobId, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Complete);
             var steps = await ReadStepsAsync(t.Connection, t.Transaction, jobId, t.Token);
@@ -423,10 +423,10 @@ public sealed class JobRepository
                 t.Job.PublicId.ToString("D"), Json(new Dictionary<string, object?> { ["state"] = t.Job.State.ToString() }),
                 Json(new Dictionary<string, object?> { ["state"] = "Completing" })));
             return await t.ReloadAsync();
-        });
+        }, refuseIfLockedByAnother: true, requires: JobCapability.Complete);
 
     public Task<JobRecord> FinishCompleteAsync(long jobId, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context, cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context, cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Complete);
             t.Require(JobLifecycle.CanFinishComplete(t.Job.State));
@@ -439,11 +439,11 @@ public sealed class JobRepository
                 Json(new Dictionary<string, object?> { ["state"] = "Completing" }),
                 Json(new Dictionary<string, object?> { ["state"] = "Complete", ["completionVersion"] = t.Job.CompletionVersion + 1 })));
             return await t.ReloadAsync();
-        });
+        }, refuseIfLockedByAnother: true, requires: JobCapability.Complete);
 
     /// <summary>"We are not working on this anymore." A deliberate end for a job that did not run through every step.</summary>
     public Task<JobRecord> CloseAsync(long jobId, string reason, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context.WithReason(reason), cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context.WithReason(reason), cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Close);
             var (active, unconfirmed) = await _probe.GetAsync(t.Connection, t.Transaction, jobId, t.Token);
@@ -455,10 +455,10 @@ public sealed class JobRepository
                 Json(new Dictionary<string, object?> { ["state"] = t.Job.State.ToString() }),
                 Json(new Dictionary<string, object?> { ["state"] = "Closed" })));
             return await t.ReloadAsync();
-        });
+        }, refuseIfLockedByAnother: true, requires: JobCapability.Close);
 
     public Task<JobRecord> ReopenAsync(long jobId, string reason, AuditContext context, CancellationToken cancellationToken = default) =>
-        InJobAsync(jobId, context.WithReason(reason), cancellationToken, async t =>
+        JobTxn.RunAsync(_open, jobId, context.WithReason(reason), cancellationToken, async t =>
         {
             await t.RequireAsync(JobCapability.Reopen);
             t.Require(JobLifecycle.CanReopen(t.Job.State, reason));
@@ -469,116 +469,11 @@ public sealed class JobRepository
                 Json(new Dictionary<string, object?> { ["state"] = t.Job.State.ToString() }),
                 Json(new Dictionary<string, object?> { ["state"] = "Draft" })));
             return await t.ReloadAsync();
-        });
-
-    // ------------------------------------------------------------------ the transaction wrapper
-
-    private async Task<T> InJobAsync<T>(long jobId, AuditContext context, CancellationToken cancellationToken, Func<JobTxn, Task<T>> body)
-    {
-        context.EnsureValid();
-        await using var connection = await _open(cancellationToken);
-        await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
-        try
-        {
-            // Locking the job row serializes every change to this job: its events are chained in order and
-            // the version checked is the version changed.
-            var job = await ReadJobAsync(connection, tx, jobId, forUpdate: true, cancellationToken) ?? throw new JobNotFoundException(jobId);
-            var result = await body(new JobTxn(connection, tx, job, context, cancellationToken));
-            await tx.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch
-        {
-            await tx.RollbackAsync(CancellationToken.None);
-            throw;
-        }
-    }
-
-    private sealed class JobTxn(SqlConnection connection, SqlTransaction transaction, JobRecord job,
-        AuditContext context, CancellationToken token)
-    {
-        public SqlConnection Connection { get; } = connection;
-        public SqlTransaction Transaction { get; } = transaction;
-        public JobRecord Job { get; private set; } = job;
-        public CancellationToken Token { get; } = token;
-
-        public async Task RequireAsync(JobCapability capability)
-        {
-            // Server-side actors (the system, the worker) are not users and are not subject to membership.
-            if (context.ActorType != ActorType.User) return;
-
-            await using var command = Connection.CreateCommand();
-            command.Transaction = Transaction;
-            command.CommandText =
-                """
-                SELECT (SELECT Role FROM ductwork.JobMember WHERE JobId = @j AND UserEmail = @e),
-                       CASE WHEN EXISTS (SELECT 1 FROM ductwork.ToolPermission WHERE UserEmail = @e AND Permission = 'JobManager') THEN 1 ELSE 0 END;
-                """;
-            command.Parameters.AddWithValue("@j", Job.JobId);
-            command.Parameters.AddWithValue("@e", context.ActorEmail!);
-            await using var reader = await command.ExecuteReaderAsync(Token);
-            await reader.ReadAsync(Token);
-            JobRole? role = reader.IsDBNull(0) ? null : Enum.Parse<JobRole>(reader.GetString(0));
-            var manager = reader.GetInt32(1) == 1;
-
-            if (!JobPermissions.Can(role, manager, capability))
-                throw new JobAccessDeniedException($"You do not have permission to do that on this job ({capability}).");
-        }
-
-        public void Require(Decision decision)
-        {
-            if (!decision.Allowed) throw new JobRuleViolationException(decision.Reason!);
-        }
-
-        public void RequireEditable()
-        {
-            if (!JobLifecycle.IsEditable(Job.State))
-                throw new JobRuleViolationException($"This job is {Job.State} and cannot be edited. Reopen it to make changes.");
-        }
-
-        public void RequireMetadataChange()
-        {
-            if (!JobLifecycle.AllowsMetadataChange(Job.State))
-                throw new JobRuleViolationException($"This job is {Job.State} and is being held still. Try again when that finishes.");
-        }
-
-        public async Task<long> BumpAsync(string extraSet, params (string Name, object? Value)[] args)
-        {
-            await using var command = Connection.CreateCommand();
-            command.Transaction = Transaction;
-            command.CommandText =
-                $"UPDATE ductwork.Job SET StateVersion = StateVersion + 1, UpdatedUtc = SYSUTCDATETIME(){(extraSet.Length == 0 ? "" : ", " + extraSet)} WHERE JobId = @j; " +
-                "SELECT StateVersion FROM ductwork.Job WHERE JobId = @j;";
-            command.Parameters.AddWithValue("@j", Job.JobId);
-            foreach (var (name, value) in args) P(command, name, value);
-            return (long)(await command.ExecuteScalarAsync(Token))!;
-        }
-
-        public Task AuditAsync(long version, AuditEntry entry) =>
-            AuditLog.AppendAsync(Connection, Transaction, Job.JobId, version, entry, context, Token);
-
-        public async Task<JobRecord> ReloadAsync()
-        {
-            Job = (await ReadJobAsync(Connection, Transaction, Job.JobId, forUpdate: false, Token))!;
-            return Job;
-        }
-
-        /// <summary>Keeps the job's primary owner pointing at a member who still owns it.</summary>
-        public async Task SyncOwnerAsync()
-        {
-            await ExecAsync(Connection, Transaction,
-                """
-                UPDATE j SET OwnerEmail = (SELECT TOP 1 UserEmail FROM ductwork.JobMember m WHERE m.JobId = j.JobId AND m.Role = 'Owner' ORDER BY m.AddedUtc, m.UserEmail)
-                FROM ductwork.Job j
-                WHERE j.JobId = @j
-                  AND NOT EXISTS (SELECT 1 FROM ductwork.JobMember m WHERE m.JobId = j.JobId AND m.Role = 'Owner' AND m.UserEmail = j.OwnerEmail);
-                """, Token, ("@j", Job.JobId));
-        }
-    }
+        }, refuseIfLockedByAnother: true, requires: JobCapability.Reopen);
 
     // ------------------------------------------------------------------ helpers
 
-    private static async Task<int> ExecAsync(SqlConnection c, SqlTransaction? tx, string sql, CancellationToken ct,
+    internal static async Task<int> ExecAsync(SqlConnection c, SqlTransaction? tx, string sql, CancellationToken ct,
         params (string Name, object? Value)[] args)
     {
         await using var command = c.CreateCommand();
@@ -588,7 +483,7 @@ public sealed class JobRepository
         return await command.ExecuteNonQueryAsync(ct);
     }
 
-    private static void P(SqlCommand command, string name, object? value) =>
+    internal static void P(SqlCommand command, string name, object? value) =>
         command.Parameters.AddWithValue(name, value ?? DBNull.Value);
 
     private const int UniqueKeyViolation = 2627;
@@ -671,16 +566,16 @@ public sealed class JobRepository
         else if (requested is not null) change(column, key, current, Blank(requested));
     }
 
-    private static string Actor(AuditContext context) => context.ActorEmail ?? context.ActorDisplayName ?? "system";
+    internal static string Actor(AuditContext context) => context.ActorEmail ?? context.ActorDisplayName ?? "system";
 
-    private static string Json(Dictionary<string, object?> values) => JsonSerializer.Serialize(values);
+    internal static string Json(Dictionary<string, object?> values) => JsonSerializer.Serialize(values);
 
     private static string JobColumns(string a) =>
         $"{a}.JobId, {a}.PublicId, {a}.Name, {a}.CustomerName, {a}.ProjectName, {a}.SiteAddress, {a}.OwnerEmail, {a}.State, {a}.StateBeforeArchive, " +
         $"{a}.CompletionVersion, {a}.StateVersion, {a}.ReviewLevel, {a}.BaselineManualHours, {a}.CompletedUtc, {a}.CompletedBy, {a}.ClosedUtc, " +
         $"{a}.ClosedBy, {a}.CloseReason, {a}.ReopenedUtc, {a}.ReopenedBy, {a}.ReopenReason, {a}.CreatedUtc, {a}.CreatedBy, {a}.UpdatedUtc";
 
-    private static async Task<JobRecord?> ReadJobAsync(SqlConnection c, SqlTransaction? tx, long jobId, bool forUpdate, CancellationToken ct)
+    internal static async Task<JobRecord?> ReadJobAsync(SqlConnection c, SqlTransaction? tx, long jobId, bool forUpdate, CancellationToken ct)
     {
         await using var command = c.CreateCommand();
         command.Transaction = tx;
@@ -690,7 +585,7 @@ public sealed class JobRepository
         return await reader.ReadAsync(ct) ? MapJob(reader) : null;
     }
 
-    private static JobRecord MapJob(SqlDataReader r) => new()
+    internal static JobRecord MapJob(SqlDataReader r) => new()
     {
         JobId = r.GetInt64(0),
         PublicId = r.GetGuid(1),
@@ -721,7 +616,7 @@ public sealed class JobRepository
     private static string? S(SqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
     private static DateTime? D(SqlDataReader r, int i) => r.IsDBNull(i) ? null : DateTime.SpecifyKind(r.GetDateTime(i), DateTimeKind.Utc);
 
-    private static async Task<IReadOnlyList<JobMemberRecord>> ReadMembersAsync(SqlConnection c, SqlTransaction? tx, long jobId, CancellationToken ct)
+    internal static async Task<IReadOnlyList<JobMemberRecord>> ReadMembersAsync(SqlConnection c, SqlTransaction? tx, long jobId, CancellationToken ct)
     {
         await using var command = c.CreateCommand();
         command.Transaction = tx;
@@ -735,7 +630,7 @@ public sealed class JobRepository
         return members;
     }
 
-    private static async Task<IReadOnlyDictionary<string, StepStatus>> ReadStepsAsync(SqlConnection c, SqlTransaction? tx, long jobId, CancellationToken ct)
+    internal static async Task<IReadOnlyDictionary<string, StepStatus>> ReadStepsAsync(SqlConnection c, SqlTransaction? tx, long jobId, CancellationToken ct)
     {
         await using var command = c.CreateCommand();
         command.Transaction = tx;
