@@ -8,6 +8,7 @@ using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Review;
+using AIToolbox.Ductwork.Core.Rules;
 using AIToolbox.Ductwork.Core.Tasks;
 using AIToolbox.Web.Data;
 using AIToolbox.Web.Security;
@@ -249,6 +250,8 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new TaskResultIngestor(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<ReviewLevelSettings>()));
 
+        services.AddSingleton(sp => new RuleRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
+        services.AddSingleton(sp => new FindingRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new EntityReviewRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new SheetRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
 

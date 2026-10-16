@@ -4,6 +4,7 @@ using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Drawings;
+using AIToolbox.Ductwork.Core.Rules;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -235,6 +236,9 @@ public sealed class ApiHarness(DuctworkDatabase db)
         var reply = await RunAsync(() => LockApi(email, tab).Acquire(jobId, default));
         return (tab, reply["fencingToken"].GetInt64());
     }
+
+    public DuctworkRulesController RulesApi(string email, string tab, long? fencing = null) =>
+        With(new DuctworkRulesController(JobRepo, LockService, new RuleRepository(Open), new FindingRepository(Open), new SheetRepository(Open)), Person(email), tab, fencing);
 
     public DuctworkReviewController ReviewApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkReviewController(JobRepo, LockService, new EntityReviewRepository(Open)), Person(email), tab, fencing);

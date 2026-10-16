@@ -43,6 +43,8 @@ public sealed record EntityRecord
     public int Revision { get; init; }
     public long? SheetViewId { get; init; }
     public string? DispositionReason { get; init; }
+    /// <summary>The rule version that last changed this item, when its resolution source is Rule.</summary>
+    public long? ResolvedByRuleId { get; init; }
 }
 
 public sealed record EntityFilter
@@ -107,7 +109,7 @@ public sealed class EntityRepository
     internal const string Columns =
         "EntityId, PublicId, JobId, BuildingTypeId, ProducerId, ProcessingTaskId, DetectionId, Type, Category, Tag, Size, Manufacturer, Model, CustomerPartCode, " +
         "Quantity, Unit, Method, Family, Confidence, SurfacedAs, ReviewLevelAtCreation, ReviewStatus, Disposition, ResolutionSource, IsStale, SheetViewRef, " +
-        "BoxX0, BoxY0, BoxX1, BoxY1, Evidence, Revision, SheetViewId, DispositionReason";
+        "BoxX0, BoxY0, BoxX1, BoxY1, Evidence, Revision, SheetViewId, DispositionReason, ResolvedByRuleId";
 
     internal static EntityRecord Map(SqlDataReader r) => new()
     {
@@ -141,7 +143,8 @@ public sealed class EntityRepository
         Evidence = S(r, 30),
         Revision = r.GetInt32(31),
         SheetViewId = r.IsDBNull(32) ? null : r.GetInt64(32),
-        DispositionReason = S(r, 33)
+        DispositionReason = S(r, 33),
+        ResolvedByRuleId = r.IsDBNull(34) ? null : r.GetInt64(34)
     };
 
     private static string? S(SqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);

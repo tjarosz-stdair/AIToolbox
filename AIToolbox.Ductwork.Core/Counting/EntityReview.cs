@@ -228,7 +228,8 @@ public sealed class EntityReviewRepository
             else if (edit.SheetViewId is { } sv) { await RequireOnJobAsync(t, "SheetView", "SheetViewId", sv, "view"); state = state with { SheetViewId = sv }; }
 
             // Changing what an item is, or how many, is an override of what the detector said. Placing it is not.
-            if (contentChanged && current.ResolutionSource == ResolutionSource.Detector) state = state with { ResolutionSource = ResolutionSource.Override };
+            if (contentChanged && current.ResolutionSource is ResolutionSource.Detector or ResolutionSource.Rule)
+                state = state with { ResolutionSource = ResolutionSource.Override, ResolvedByRuleId = null };
 
             if (state == StateOf(current)) return current;
             return await ApplyAsync(t, current, state, "Edited", Clean(reason), null, $"Edited {Describe(current)}.", "review.edited");
@@ -327,7 +328,7 @@ public sealed class EntityReviewRepository
         return result is null or DBNull ? null : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    private async Task<EntityRecord> UndoCoreAsync(JobTxn t, EntityRecord current)
+    internal static async Task<EntityRecord> UndoCoreAsync(JobTxn t, EntityRecord current)
     {
         t.RequireEditable();
         var latest = (await ReadRevisionsAsync(t.Connection, t.Transaction, "WHERE EntityId = @id AND RevisionNo = @n", t.Token, ("@id", current.EntityId), ("@n", current.Revision))).SingleOrDefault();
@@ -358,13 +359,14 @@ public sealed class EntityReviewRepository
         public Disposition Disposition { get; init; }
         public string? DispositionReason { get; init; }
         public ResolutionSource ResolutionSource { get; init; }
+        public long? ResolvedByRuleId { get; init; }
     }
 
     private static EntityState StateOf(EntityRecord e) => new()
     {
         BuildingTypeId = e.BuildingTypeId, SheetViewId = e.SheetViewId, Type = e.Type, Category = e.Category, Tag = e.Tag, Size = e.Size, Manufacturer = e.Manufacturer,
         Model = e.Model, CustomerPartCode = e.CustomerPartCode, Quantity = e.Quantity, Unit = e.Unit, ReviewStatus = e.ReviewStatus, Disposition = e.Disposition,
-        DispositionReason = e.DispositionReason, ResolutionSource = e.ResolutionSource
+        DispositionReason = e.DispositionReason, ResolutionSource = e.ResolutionSource, ResolvedByRuleId = e.ResolvedByRuleId
     };
 
     private static async Task<EntityRecord> ApplyAsync(JobTxn t, EntityRecord current, EntityState after, string action, string? reason, int? undoOf, string? summary, string? auditAction)
@@ -374,12 +376,12 @@ public sealed class EntityReviewRepository
             """
             UPDATE ductwork.Entity
             SET BuildingTypeId = @bt, SheetViewId = @sv, Type = @type, Category = @cat, Tag = @tag, Size = @size, Manufacturer = @man, Model = @model, CustomerPartCode = @part,
-                Quantity = @qty, Unit = @unit, ReviewStatus = @rs, Disposition = @disp, DispositionReason = @why, ResolutionSource = @res, Revision = @next
+                Quantity = @qty, Unit = @unit, ReviewStatus = @rs, Disposition = @disp, DispositionReason = @why, ResolutionSource = @res, ResolvedByRuleId = @rule, Revision = @next
             WHERE EntityId = @id AND Revision = @cur;
             """, t.Token,
             ("@bt", after.BuildingTypeId), ("@sv", after.SheetViewId), ("@type", after.Type), ("@cat", after.Category), ("@tag", after.Tag), ("@size", after.Size),
             ("@man", after.Manufacturer), ("@model", after.Model), ("@part", after.CustomerPartCode), ("@qty", after.Quantity), ("@unit", after.Unit.ToString()),
-            ("@rs", after.ReviewStatus.ToString()), ("@disp", after.Disposition.ToString()), ("@why", after.DispositionReason), ("@res", after.ResolutionSource.ToString()),
+            ("@rs", after.ReviewStatus.ToString()), ("@disp", after.Disposition.ToString()), ("@why", after.DispositionReason), ("@res", after.ResolutionSource.ToString()), ("@rule", after.ResolvedByRuleId),
             ("@next", next), ("@id", current.EntityId), ("@cur", current.Revision));
         if (moved == 0) throw new EntityConflictException(current.Revision, current.Revision + 1);
 
@@ -396,6 +398,18 @@ public sealed class EntityReviewRepository
                 JsonSerializer.Serialize(StateOf(current), StateJson), JsonSerializer.Serialize(after, StateJson)), current.ProcessingTaskId, current.ProducerId);
 
         return (await ReadAsync(t.Connection, t.Transaction, "WHERE EntityId = @id", t.Token, ("@id", current.EntityId)))!;
+    }
+
+    /// <summary>A rule changes an item: it takes the values the rule produced and records which rule version did it, on the item's history and in the rule's applications.</summary>
+    internal static async Task<EntityRecord> ApplyRuleAsync(JobTxn t, EntityRecord current, long ruleId, string type, string? size, decimal quantity, string change, Guid batchId)
+    {
+        var after = StateOf(current) with { Type = type, Size = size, Quantity = quantity, ResolutionSource = ResolutionSource.Rule, ResolvedByRuleId = ruleId };
+        var updated = await ApplyAsync(t, current, after, "Rule", null, null, null, null);
+        await JobRepository.ExecAsync(t.Connection, t.Transaction,
+            "INSERT INTO ductwork.RuleApplication (JobId, RuleId, EntityId, EntityRevisionNo, BatchId, Change, AppliedBy) VALUES (@j, @r, @e, @n, @b, @c, @by);", t.Token,
+            ("@j", current.JobId), ("@r", ruleId), ("@e", current.EntityId), ("@n", updated.Revision), ("@b", batchId), ("@c", change.Length > 400 ? change[..400] : change),
+            ("@by", JobRepository.Actor(t.Context)));
+        return updated;
     }
 
     // ------------------------------------------------------------------ helpers
@@ -484,7 +498,7 @@ public sealed class EntityReviewRepository
     }
 
     /// <summary>One completed "manual entry" task per person per job, so every item has a task and nobody has to create one.</summary>
-    private static async Task<long> ManualTaskAsync(JobTxn t, long producerId, string email)
+    internal static async Task<long> ManualTaskAsync(JobTxn t, long producerId, string email)
     {
         await using (var find = t.Connection.CreateCommand())
         {
@@ -511,7 +525,7 @@ public sealed class EntityReviewRepository
         return Convert.ToInt64(await insert.ExecuteScalarAsync(t.Token), CultureInfo.InvariantCulture);
     }
 
-    private static async Task<EntityRecord?> ReadAsync(SqlConnection c, SqlTransaction? tx, string whereAndHint, CancellationToken ct, params (string Name, object? Value)[] args)
+    internal static async Task<EntityRecord?> ReadAsync(SqlConnection c, SqlTransaction? tx, string whereAndHint, CancellationToken ct, params (string Name, object? Value)[] args)
     {
         await using var command = c.CreateCommand();
         command.Transaction = tx;

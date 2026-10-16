@@ -86,8 +86,14 @@ public sealed record CountSheet
     public required IReadOnlyList<OpenItem> OpenItems { get; init; }
     public IReadOnlyList<string> UnconfirmedBuildingTypes { get; init; } = [];
 
-    public bool IsFinal => OpenItems.Count == 0 && UnconfirmedBuildingTypes.Count == 0 && Totals.All(t => t.IsComplete) && Totals.All(t => t.ProposedCount == 0);
+    /// <summary>Questions nobody has answered yet. The sheet is not final while any is open, because the answer could change a count.</summary>
+    public IReadOnlyList<OpenFinding> OpenFindings { get; init; } = [];
+
+    public bool IsFinal => OpenItems.Count == 0 && OpenFindings.Count == 0 && UnconfirmedBuildingTypes.Count == 0 && Totals.All(t => t.IsComplete) && Totals.All(t => t.ProposedCount == 0);
 }
+
+/// <summary>A finding still waiting for a person, listed so it cannot be forgotten.</summary>
+public sealed record OpenFinding(Guid FindingId, FindingKind Kind, string Question, string? Item);
 
 /// <summary>
 /// Builds the count sheet from building types and entities (plan section 12). It is computed, never
@@ -287,7 +293,11 @@ public sealed class CountSheetRepository
         await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         var types = await BuildingTypeRepository.ListAsync(connection, tx, jobId, cancellationToken);
         var entities = await EntityRepository.ListAsync(connection, tx, jobId, new EntityFilter(), cancellationToken);
+        var findings = await FindingRepository.ListOpenAsync(connection, tx, jobId, cancellationToken);
         await tx.CommitAsync(cancellationToken);
-        return CountSheetBuilder.Build(jobId, types, entities);
+        return CountSheetBuilder.Build(jobId, types, entities) with
+        {
+            OpenFindings = findings.Select(f => new OpenFinding(f.PublicId, f.Kind, f.Question, f.Item)).ToList()
+        };
     }
 }

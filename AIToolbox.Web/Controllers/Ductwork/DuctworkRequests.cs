@@ -61,6 +61,15 @@ public sealed record ReviewManyRequest(Guid[]? EntityIds, string? Status, string
 public sealed record AddEntityRequest(string? Type, string? Category, string? Tag, string? Size, string? Manufacturer, string? Model, string? CustomerPartCode, decimal? Quantity,
     string? Unit, long? BuildingTypeId, long? SheetViewId, string? Disposition, string? DispositionReason, double[]? Box, string? Evidence);
 
+// ---- rules and findings
+
+public sealed record RuleBody(string? Name, string? Description, string? Scope, long? BuildingTypeId, Guid? SheetId,
+    AIToolbox.Ductwork.Core.Rules.RuleMatch? Match, AIToolbox.Ductwork.Core.Rules.RuleAction? Action, Guid? FromFindingId);
+
+public sealed record RetireRuleRequest(string? Reason);
+
+public sealed record ResolveFindingRequest(string? Kind, Guid? RuleId, string? Note);
+
 // ---- sheets and views
 
 public sealed record SheetBody(int PageNo, double WidthPts, double HeightPts, int Rotation, string? SheetNumber, string? Title, string? Discipline, string? Kind,
