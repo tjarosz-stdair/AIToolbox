@@ -26,6 +26,8 @@ public sealed class DuctworkWorkerApiController(
     ProcessingTaskRepository tasks,
     TaskResultIngestor ingestor,
     SheetRepository sheets,
+    UploadService uploads,
+    BuildingTypeRepository buildingTypes,
     Func<CancellationToken, Task<SqlConnection>> open,
     LockSettings lockSettings,
     TaskSettings taskSettings,
@@ -84,6 +86,52 @@ public sealed class DuctworkWorkerApiController(
         });
     }
 
+    /// <summary>
+    /// What the task is about: the job's drawing files, the sheets already recorded, and its building types. Only the worker that
+    /// holds the task can ask, and only about that task's job, so a worker never learns about work it was not given.
+    /// </summary>
+    [HttpGet("tasks/{taskId:long}/input")]
+    public async Task<IActionResult> Input(long taskId, [FromQuery] string workerName, CancellationToken ct)
+    {
+        var task = await RequireHeldAsync(taskId, workerName, ct);
+        var files = await uploads.ListFilesAsync(task.JobId, ct);
+        var recorded = await sheets.ListByJobAsync(task.JobId, ct);
+        var types = await buildingTypes.ListByJobAsync(task.JobId, ct);
+        return DuctworkJson.Result(new
+        {
+            taskId = task.ProcessingTaskId, jobId = task.JobId, taskType = task.TaskType, inputManifestRef = task.InputManifestRef,
+            files = files.Select(f => new { fileId = f.PublicId, fileName = f.OriginalName, bytes = f.Bytes, sha256 = f.Sha256, revision = f.RevisionNo, duplicateOf = f.DuplicateOfPublicId }),
+            sheets = recorded.Select(s => new
+            {
+                sheetId = s.PublicId, fileId = s.SourceFilePublicId, pageNo = s.PageNo, sheetNumber = s.SheetNumber, title = s.Title, kind = s.Kind, inScope = s.InScope,
+                widthPts = s.WidthPts, heightPts = s.HeightPts, rotation = s.Rotation, duplicateOf = s.DuplicateOfPublicId,
+                views = s.Views.Select(v => new { viewId = v.PublicId, title = v.Title, buildingTypeId = v.BuildingTypeId, scaleRatio = v.ScaleRatio })
+            }),
+            buildingTypes = types.Select(b => new { buildingTypeId = b.BuildingTypeId, name = b.Name })
+        });
+    }
+
+    /// <summary>A drawing file of the task's job, for the worker that holds the task.</summary>
+    [HttpGet("tasks/{taskId:long}/files/{fileId:guid}/content")]
+    public async Task<IActionResult> FileContent(long taskId, Guid fileId, [FromQuery] string workerName, CancellationToken ct)
+    {
+        var task = await RequireHeldAsync(taskId, workerName, ct);
+        var file = await uploads.GetFileAsync(task.JobId, fileId, ct) ?? throw new KeyNotFoundException("That file is not on this task's job.");
+        var stream = await uploads.GetFileContentAsync(file, ct) ?? throw new KeyNotFoundException("That file is no longer available.");
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        Response.Headers["Cache-Control"] = "private, no-store";
+        return new FileStreamResult(stream, "application/pdf") { EnableRangeProcessing = true };
+    }
+
+    private async Task<ProcessingTaskRecord> RequireHeldAsync(long taskId, string workerName, CancellationToken ct)
+    {
+        var worker = DuctworkAuditContexts.ForWorker(HttpContext, workerName);
+        var task = await tasks.GetAsync(taskId, ct);
+        if (task is null || task.Status != ProcessingTaskStatus.Running || task.LeaseOwner != worker.ActorDisplayName)
+            throw new JobRuleViolationException("This task is not running under this worker.");
+        return task;
+    }
+
     /// <summary>Extends the lease and records progress. Tells the worker whether to continue: false means it lost the task or the task was cancelled.</summary>
     [HttpPost("tasks/{taskId:long}/heartbeat")]
     public async Task<IActionResult> Heartbeat(long taskId, [FromBody] WorkerHeartbeatRequest request, CancellationToken ct)
@@ -126,7 +174,9 @@ public sealed class DuctworkWorkerApiController(
     {
         var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
         var created = await sheets.RegisterFromTaskAsync(taskId, request.FileId, DuctworkSheetsController.ToNew(request.Sheets), worker, ct);
-        return DuctworkJson.Result(new { recorded = created.Count, duplicates = created.Count(s => s.DuplicateOfPublicId is not null) }, 201);
+        // The answer lists every page of the file, so count only the pages this report added.
+        var added = created.Where(s => (request.Sheets ?? []).Any(p => p.PageNo == s.PageNo)).ToList();
+        return DuctworkJson.Result(new { recorded = added.Count, duplicates = added.Count(s => s.DuplicateOfPublicId is not null) }, 201);
     }
 
     /// <summary>The worker reports that it could not finish. A retryable failure is queued again after a delay while attempts remain.</summary>

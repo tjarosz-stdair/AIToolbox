@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AIToolbox.Web\AIToolbox.Web.csproj" />
+    <!-- The worker is built against the same server answers it will receive, so a change on either side that breaks the other fails a test. -->
+    <ProjectReference Include="..\AIToolbox.Ductwork.Worker\AIToolbox.Ductwork.Worker.csproj" />
   </ItemGroup>
 
 </Project>

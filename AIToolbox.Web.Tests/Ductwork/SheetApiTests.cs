@@ -140,6 +140,38 @@ public class SheetApiTests(DuctworkDatabase db) : IClassFixture<DuctworkDatabase
     // ---- worker
 
     [Fact]
+    public async Task The_worker_holding_a_task_can_read_its_input_and_download_its_jobs_file_and_nobody_else_can()
+    {
+        var (job, tab, token, file) = await ReadyAsync();
+        var producer = await _h.ProducerAsync(ProducerRef.Algorithm("input-" + Guid.NewGuid().ToString("N")[..6], "1.0", "h"));
+        var type = "index-" + Guid.NewGuid().ToString("N")[..8];
+        await _h.BindingRepo.BindAsync(type, producer, await _h.EvalRunAsync(producer), false, 3, AIToolbox.Ductwork.Core.Jobs.AuditContext.ForUser(Admin, sessionId: "setup", isAdmin: true));
+        await RunAsync(() => _h.JobsApi(Editor, tab, token).EnqueueTask(job, new EnqueueTaskRequest(type, "inputs/x", null), default));
+        var claimed = await RunAsync(() => _h.WorkerApi().Claim(new WorkerClaimRequest("w1", [type]), default));
+        var taskId = claimed["taskId"].GetInt64();
+
+        var input = await RunAsync(() => _h.WorkerApi().Input(taskId, "w1", default));
+        Assert.Equal((200, job, "inputs/x", 1), (input.Status, input["jobId"].GetInt64(), input["inputManifestRef"].GetString(), input["files"].GetArrayLength()));
+        Assert.Equal(file, input["files"][0].GetProperty("fileId").GetGuid());
+
+        var download = await RunAsync(() => _h.WorkerApi().FileContent(taskId, file, "w1", default));
+        await using (var stream = download.Stream!)
+        {
+            Assert.Equal(400, stream.Length);
+        }
+
+        // Not the worker that holds the task.
+        Assert.Equal(422, (await RunAsync(() => _h.WorkerApi().Input(taskId, "w2", default))).Status);
+        Assert.Equal(422, (await RunAsync(() => _h.WorkerApi().FileContent(taskId, file, "w2", default))).Status);
+        // A file of another job is not reachable through this task.
+        var (_, otherTab, otherToken, otherFile) = await ReadyAsync(9);
+        Assert.Equal(404, (await RunAsync(() => _h.WorkerApi().FileContent(taskId, otherFile, "w1", default))).Status);
+        _ = (otherTab, otherToken);
+        // A task that is not running.
+        Assert.Equal(422, (await RunAsync(() => _h.WorkerApi().Input(long.MaxValue, "w1", default))).Status);
+    }
+
+    [Fact]
     public async Task The_worker_reports_pages_under_its_task_and_a_worker_without_the_task_is_refused()
     {
         var (job, tab, token, file) = await ReadyAsync();

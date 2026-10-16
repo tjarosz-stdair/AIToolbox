@@ -171,7 +171,7 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkWorkerApiController WorkerApi(int consumerId = 1, string consumerName = "worker-key", string[]? scopes = null, int bodyLimit = 0,
         Stream? body = null, IOptions<DuctworkOptions>? options = null)
     {
-        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
+        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Uploads, new BuildingTypeRepository(Open), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
         var principal = ApiConsumer(consumerId, consumerName, scopes ?? [KnownApiScopes.DuctworkWorker, "tool:" + DuctworkTool.ToolKey]);
         With(controller, principal, null, null);
         if (body is not null)
