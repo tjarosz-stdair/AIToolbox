@@ -28,6 +28,7 @@ public sealed class DuctworkWorkerApiController(
     SheetRepository sheets,
     UploadService uploads,
     BuildingTypeRepository buildingTypes,
+    DuctworkVisionGateway vision,
     Func<CancellationToken, Task<SqlConnection>> open,
     LockSettings lockSettings,
     TaskSettings taskSettings,
@@ -179,6 +180,24 @@ public sealed class DuctworkWorkerApiController(
         return DuctworkJson.Result(new { recorded = added.Count, duplicates = added.Count(s => s.DuplicateOfPublicId is not null) }, 201);
     }
 
+    /// <summary>
+    /// A worker asks the server to send images to the hosted model its task was approved for. The worker holds no provider keys and
+    /// cannot call one: the gateway checks the policy, the approval, the sheets and the budget, reserves the images, and only then sends.
+    /// </summary>
+    [HttpPost("tasks/{taskId:long}/vision")]
+    [RequestSizeLimit(DuctworkWorkerApiLimits.MaxVisionRequestBytes)]
+    public async Task<IActionResult> Vision(long taskId, [FromBody] WorkerVisionRequest request, CancellationToken ct)
+    {
+        var worker = DuctworkAuditContexts.ForWorker(HttpContext, request.WorkerName ?? "");
+        var result = await vision.SendAsync(taskId, worker, new VisionSendInput(request.Directive ?? "", request.SheetIds ?? [],
+            (request.Images ?? []).Select(i => new VisionImageInput(i.Label, i.MediaType ?? "", i.DataBase64 ?? "")).ToList()), ct);
+        return DuctworkJson.Result(new
+        {
+            text = result.Text, finishReason = result.FinishReason, inputTokens = result.InputTokens, outputTokens = result.OutputTokens,
+            transmissionId = result.TransmissionId, imagesSent = result.ImagesSent, provider = result.Provider, model = result.Model
+        });
+    }
+
     /// <summary>The worker reports that it could not finish. A retryable failure is queued again after a delay while attempts remain.</summary>
     [HttpPost("tasks/{taskId:long}/fail")]
     public async Task<IActionResult> Fail(long taskId, [FromBody] WorkerFailRequest request, CancellationToken ct)
@@ -208,4 +227,7 @@ public static class DuctworkWorkerApiLimits
 {
     /// <summary>The hard ceiling on a result request, enforced by the framework before the body is read. The configured limit can only be lower.</summary>
     public const int MaxRequestBytes = 200 * 1024 * 1024;
+
+    /// <summary>Images travel as base64, so this allows about 15 images of the largest size the providers accept. Crops are far smaller.</summary>
+    public const int MaxVisionRequestBytes = 100 * 1024 * 1024;
 }

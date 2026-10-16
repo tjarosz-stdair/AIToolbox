@@ -69,6 +69,7 @@ public class WorkerContractTests(DuctworkDatabase db) : IClassFixture<DuctworkDa
         public Task<HeartbeatReply> HeartbeatAsync(long taskId, int done, int? total, string? message, CancellationToken ct) => throw new NotSupportedException();
         public Task DownloadFileAsync(long taskId, Guid fileId, Stream destination, CancellationToken ct) => throw new NotSupportedException();
         public Task<RegisterSheetsReply> RegisterSheetsAsync(long taskId, Guid fileId, IReadOnlyList<PageReport> pages, CancellationToken ct) => throw new NotSupportedException();
+        public Task<VisionReply> SendVisionAsync(long taskId, string directive, IReadOnlyList<Guid> sheetIds, IReadOnlyList<VisionImage> images, CancellationToken ct) => throw new NotSupportedException();
         public Task<SubmitReply> SubmitResultAsync(long taskId, string manifestJson, string? resultRef, CancellationToken ct) => throw new NotSupportedException();
         public Task FailAsync(long taskId, string error, bool retryable, CancellationToken ct) => throw new NotSupportedException();
     }

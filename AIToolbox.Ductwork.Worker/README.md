@@ -29,6 +29,14 @@ Downloaded drawings are checked against the SHA-256 the server holds before any 
 
 New detector families are new `ITaskHandler` classes registered in `Program.cs`.
 
+## Hosted vision
+
+A handler that needs a hosted model to read a page asks the server (`TaskContext.SendVisionAsync`); the worker never calls a
+provider itself and holds no provider keys. The server sends only if the administrator has switched hosted vision on, a person
+has approved those sheets for this run, and the approval is unexpired, for this model and within its image budget. A refusal
+(`VisionRefusedApiException`) carries a reason code and ends the task rather than trying another way to read the page. A
+vision send is never retried automatically: each one spends the approved budget and discloses content.
+
 ## Setting it up
 
 1. In AIToolbox, create an API consumer for the worker with the scopes `ductwork:worker` and `tool:DuctworkTakeoff`.

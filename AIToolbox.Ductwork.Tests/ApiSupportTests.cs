@@ -172,8 +172,7 @@ public class ApiSupportTests(SqlFixture db) : IClassFixture<SqlFixture>
         await Bindings().BindAsync(type, producer, await EvalRunAsync(producer), true, 2, Admin);
 
         await Assert.ThrowsAsync<JobRuleViolationException>(() => Tasks().EnqueueByTypeAsync(job.JobId, type, null, null, token, Ctx(Editor)));
-        var approved = await Tasks().EnqueueByTypeAsync(job.JobId, type, null, 42, token, Ctx(Editor));
-        Assert.Equal((true, 42L), (approved.SendsDrawingContentToHostedModel, approved.VisionApprovalId));
+        await Assert.ThrowsAsync<JobRuleViolationException>(() => Tasks().EnqueueByTypeAsync(job.JobId, type, null, 42, token, Ctx(Editor)));   // 42 is not an approval
     }
 
     [Fact]

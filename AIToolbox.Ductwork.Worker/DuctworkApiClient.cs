@@ -17,6 +17,7 @@ public interface IDuctworkApi
     Task<TaskInput> GetInputAsync(long taskId, CancellationToken ct);
     Task DownloadFileAsync(long taskId, Guid fileId, Stream destination, CancellationToken ct);
     Task<RegisterSheetsReply> RegisterSheetsAsync(long taskId, Guid fileId, IReadOnlyList<PageReport> pages, CancellationToken ct);
+    Task<VisionReply> SendVisionAsync(long taskId, string directive, IReadOnlyList<Guid> sheetIds, IReadOnlyList<VisionImage> images, CancellationToken ct);
     Task<SubmitReply> SubmitResultAsync(long taskId, string manifestJson, string? resultRef, CancellationToken ct);
     Task FailAsync(long taskId, string error, bool retryable, CancellationToken ct);
 }
@@ -100,6 +101,15 @@ public sealed class DuctworkApiClient : IDuctworkApi
         return (await response.Content.ReadFromJsonAsync<RegisterSheetsReply>(WorkerJson.Options, ct))!;
     }
 
+    public async Task<VisionReply> SendVisionAsync(long taskId, string directive, IReadOnlyList<Guid> sheetIds, IReadOnlyList<VisionImage> images, CancellationToken ct)
+    {
+        var body = new { workerName = Name, directive, sheetIds, images = images.Select(i => new { label = i.Label, mediaType = i.MediaType, dataBase64 = Convert.ToBase64String(i.Bytes) }) };
+        // Never sent twice on a hiccup: each send spends an approved image budget and discloses content, so the caller decides whether to ask again.
+        using var response = await SendAsync(() => Json(HttpMethod.Post, $"tasks/{taskId}/vision", body), ct, retry: false);
+        await EnsureSuccessAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<VisionReply>(WorkerJson.Options, ct))!;
+    }
+
     public async Task<SubmitReply> SubmitResultAsync(long taskId, string manifestJson, string? resultRef, CancellationToken ct)
     {
         var query = $"workerName={Uri.EscapeDataString(Name)}" + (resultRef is null ? "" : $"&resultRef={Uri.EscapeDataString(resultRef)}");
@@ -123,20 +133,20 @@ public sealed class DuctworkApiClient : IDuctworkApi
         new(method, Base + path) { Content = JsonContent.Create(body, new MediaTypeHeaderValue("application/json"), WorkerJson.Options) };
 
     /// <summary>Sends a request, asking again after a pause when the server was busy or unreachable. A refusal is never retried.</summary>
-    private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> build, CancellationToken ct, HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
+    private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> build, CancellationToken ct, HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead, bool retry = true)
     {
         for (var attempt = 0; ; attempt++)
         {
             try
             {
                 var response = await _http.SendAsync(build(), completion, ct);
-                if (!IsTransient(response.StatusCode) || attempt >= _retryDelays.Length) return response;
+                if (!retry || !IsTransient(response.StatusCode) || attempt >= _retryDelays.Length) return response;
                 response.Dispose();
             }
-            catch (HttpRequestException) when (attempt < _retryDelays.Length)
+            catch (HttpRequestException) when (retry && attempt < _retryDelays.Length)
             {
             }
-            catch (TaskCanceledException) when (!ct.IsCancellationRequested && attempt < _retryDelays.Length)
+            catch (TaskCanceledException) when (retry && !ct.IsCancellationRequested && attempt < _retryDelays.Length)
             {
                 // The request timed out; the caller did not cancel.
             }
@@ -181,6 +191,7 @@ public sealed class DuctworkApiClient : IDuctworkApi
         if (response.IsSuccessStatusCode) return;
         var error = await ReadErrorAsync(response, ct);
         if (error.Code == "result-rejected") throw new ResultRejectedApiException(error.Reasons, error.Message);
+        if (error.Code == "vision-refused") throw new VisionRefusedApiException(error.Extra.GetValueOrDefault("reason") ?? "", error.Message);
         throw new ApiException((int)response.StatusCode, error.Code, error.Message);
     }
 }

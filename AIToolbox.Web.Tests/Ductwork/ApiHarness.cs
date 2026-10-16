@@ -4,7 +4,11 @@ using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Drawings;
+using AIToolbox.Ductwork.Core.Llm;
 using AIToolbox.Ductwork.Core.Rules;
+using AIToolbox.Web.Data;
+using AIToolbox.Web.Models;
+using AIToolbox.Web.Services;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -144,7 +148,7 @@ public sealed class ApiHarness(DuctworkDatabase db)
 
     public DuctworkJobsController JobsApi(string email, string? tab = null, long? fencing = null, bool admin = false) =>
         With(new DuctworkJobsController(JobRepo, LockService, TaskRepo, new EntityRepository(Open), new CountSheetRepository(Open),
-            new ActivityRepository(Open, Locks.HeartbeatInterval)), Person(email, admin), tab ?? NewTab(), fencing);
+            new ActivityRepository(Open, Locks.HeartbeatInterval), new VisionRepository(Open)), Person(email, admin), tab ?? NewTab(), fencing);
 
     public DuctworkLockController LockApi(string email, string tab, long? fencing = null, bool admin = false) =>
         With(new DuctworkLockController(JobRepo, LockService), Person(email, admin), tab, fencing);
@@ -171,7 +175,7 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkWorkerApiController WorkerApi(int consumerId = 1, string consumerName = "worker-key", string[]? scopes = null, int bodyLimit = 0,
         Stream? body = null, IOptions<DuctworkOptions>? options = null)
     {
-        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Uploads, new BuildingTypeRepository(Open), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
+        var controller = new DuctworkWorkerApiController(TaskRepo, new TaskResultIngestor(Open), new SheetRepository(Open), Uploads, new BuildingTypeRepository(Open), new DuctworkVisionGateway(new VisionRepository(Open), Providers, ProviderClient), Open, Locks, TaskSettings, options ?? Options.Create(new DuctworkOptions()));
         var principal = ApiConsumer(consumerId, consumerName, scopes ?? [KnownApiScopes.DuctworkWorker, "tool:" + DuctworkTool.ToolKey]);
         With(controller, principal, null, null);
         if (body is not null)
@@ -237,6 +241,17 @@ public sealed class ApiHarness(DuctworkDatabase db)
         return (tab, reply["fencingToken"].GetInt64());
     }
 
+    /// <summary>The providers the instance has configured, and the answers its client gives, for tests to set up.</summary>
+    public FakeProviders Providers { get; } = new();
+
+    public FakeProviderClient ProviderClient { get; } = new();
+
+    public DuctworkVisionController VisionApi(string email, string tab) =>
+        With(new DuctworkVisionController(JobRepo, new VisionRepository(Open), Providers), Person(email), tab, null);
+
+    public DuctworkVisionAdminController VisionAdminApi() =>
+        With(new DuctworkVisionAdminController(new VisionRepository(Open), Providers), Person(Admin, admin: true), NewTab(), null);
+
     public DuctworkRulesController RulesApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkRulesController(JobRepo, LockService, new RuleRepository(Open), new FindingRepository(Open), new SheetRepository(Open)), Person(email), tab, fencing);
 
@@ -278,4 +293,45 @@ public static class JsonExtensions
 {
     /// <summary>Reads a number that the API wrote as a JSON number, whichever integer width it has.</summary>
     public static long GetInt64Safe(this JsonElement element) => element.GetInt64();
+}
+
+/// <summary>An in-memory list of AIToolbox providers.</summary>
+public sealed class FakeProviders : IAiProviderRepository
+{
+    public List<AiProvider> All { get; } = [];
+
+    public static AiProvider Vision(int id = 7, string model = "vision-1", bool allowed = true, bool supportsVision = true, string? route = "Microsoft Foundry") => new()
+    {
+        Id = id, DisplayName = "Foundry Vision " + id, ProviderType = AiProviderType.OpenAiCompatible, EndpointUrl = "https://foundry.example.invalid/openai/", ModelName = model,
+        ApiVersion = "2024-10-21", MaxOutputTokens = 4000, IsEnabled = true, SupportsVision = supportsVision, AllowedForDuctwork = allowed, GovernanceRoute = route
+    };
+
+    public Task<IReadOnlyList<AiProvider>> GetAllAsync(bool includeDisabled = false, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AiProvider>>(All.Where(p => includeDisabled || p.IsEnabled).ToList());
+
+    public Task<IReadOnlyList<AiProvider>> GetEnabledByIdsAsync(IEnumerable<int> ids, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AiProvider>>(All.Where(p => p.IsEnabled && ids.Contains(p.Id)).ToList());
+
+    public Task<AiProvider?> GetByIdAsync(int id, CancellationToken cancellationToken = default) => Task.FromResult(All.FirstOrDefault(p => p.Id == id));
+
+    public Task<int> CreateAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public Task UpdateAsync(AiProvider provider, bool updateSecret, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+}
+
+/// <summary>Answers image requests from a script and remembers what it was asked to send.</summary>
+public sealed class FakeProviderClient : IAiProviderClient
+{
+    public List<ImagePromptRequest> Sent { get; } = [];
+    public Func<ImagePromptRequest, DocumentPromptResult>? OnImage { get; set; }
+
+    public Task<AiToolCallResult> SendPromptAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public Task<DocumentPromptResult> SendDocumentPromptAsync(DocumentPromptRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public Task<DocumentPromptResult> SendImagePromptAsync(ImagePromptRequest request, CancellationToken cancellationToken = default)
+    {
+        Sent.Add(request);
+        return Task.FromResult((OnImage ?? (_ => new DocumentPromptResult { ProviderId = request.Provider.Id, ProviderName = request.Provider.DisplayName, ResponseText = "ok" }))(request));
+    }
 }

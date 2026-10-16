@@ -50,6 +50,11 @@ internal sealed class FakeApi : IDuctworkApi
     public Task<RegisterSheetsReply> RegisterSheetsAsync(long taskId, Guid fileId, IReadOnlyList<PageReport> pages, CancellationToken ct) =>
         Task.FromResult(new RegisterSheetsReply(pages.Count, 0));
 
+    public Func<IReadOnlyList<VisionImage>, VisionReply>? OnVision { get; set; }
+
+    public Task<VisionReply> SendVisionAsync(long taskId, string directive, IReadOnlyList<Guid> sheetIds, IReadOnlyList<VisionImage> images, CancellationToken ct) =>
+        Task.FromResult((OnVision ?? throw new VisionRefusedApiException("disabled", "Vision is off."))(images));
+
     public Task<SubmitReply> SubmitResultAsync(long taskId, string manifestJson, string? resultRef, CancellationToken ct)
     {
         if (SubmitError is not null) throw SubmitError;

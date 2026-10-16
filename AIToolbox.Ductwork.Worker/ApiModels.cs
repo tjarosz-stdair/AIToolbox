@@ -46,6 +46,11 @@ public sealed record PageReport(
 
 public sealed record RegisterSheetsReply(int Recorded, int Duplicates);
 
+/// <summary>An image a handler asks the server to show to the hosted model its task was approved for.</summary>
+public sealed record VisionImage(string? Label, string MediaType, byte[] Bytes);
+
+public sealed record VisionReply(string? Text, string? FinishReason, int? InputTokens, int? OutputTokens, long TransmissionId, int ImagesSent, string Provider, string Model);
+
 /// <summary>The server answered with an error the worker should understand rather than retry blindly.</summary>
 public class ApiException(int status, string code, string message) : Exception(message)
 {
@@ -66,4 +71,13 @@ public sealed class ContractMismatchException(string serverVersion, string messa
 public sealed class ResultRejectedApiException(IReadOnlyList<string> reasons, string message) : ApiException(422, "result-rejected", message)
 {
     public IReadOnlyList<string> Reasons { get; } = reasons;
+}
+
+/// <summary>
+/// The server refused to send images to a hosted model: it is switched off, the approval is missing, expired or revoked, the sheets or the
+/// budget are not covered, or the model changed. The reason is a short code. Asking again will not help until a person acts.
+/// </summary>
+public sealed class VisionRefusedApiException(string reason, string message) : ApiException(403, "vision-refused", message)
+{
+    public string Reason { get; } = reason;
 }

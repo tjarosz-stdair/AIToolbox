@@ -208,7 +208,7 @@ public class JobRulesTests
          typeof(AIToolbox.Ductwork.Core.Counting.TaskResultIngestor), typeof(AIToolbox.Ductwork.Core.Activity.ActivityRepository),
          typeof(AIToolbox.Ductwork.Core.Drawings.UploadService), typeof(AIToolbox.Ductwork.Core.Drawings.SheetRepository),
          typeof(AIToolbox.Ductwork.Core.Counting.EntityReviewRepository),
-         typeof(AIToolbox.Ductwork.Core.Rules.RuleRepository), typeof(AIToolbox.Ductwork.Core.Counting.FindingRepository)];
+         typeof(AIToolbox.Ductwork.Core.Rules.RuleRepository), typeof(AIToolbox.Ductwork.Core.Counting.FindingRepository), typeof(AIToolbox.Ductwork.Core.Llm.VisionRepository)];
 
     private static IEnumerable<(Type Type, MethodInfo Method)> PublicMethods() =>
         DataLayer.SelectMany(type => type
@@ -246,7 +246,7 @@ public class JobRulesTests
     {
         var exempt = PublicMethods().Where(x => x.Method.GetCustomAttribute<NoAuditAttribute>() is not null).ToList();
 
-        Assert.Equal(["ActivityRepository.EndSessionAsync", "ActivityRepository.RecordHeartbeatAsync", "EditLockService.HeartbeatAsync", "ProcessingTaskRepository.HeartbeatAsync", "UploadService.AppendAsync"],
+        Assert.Equal(["ActivityRepository.EndSessionAsync", "ActivityRepository.RecordHeartbeatAsync", "EditLockService.HeartbeatAsync", "ProcessingTaskRepository.HeartbeatAsync", "UploadService.AppendAsync", "VisionRepository.ExpireStaleAsync"],
             exempt.Select(x => $"{x.Type.Name}.{x.Method.Name}").Order());
         Assert.All(exempt, x => Assert.False(string.IsNullOrWhiteSpace(x.Method.GetCustomAttribute<NoAuditAttribute>()!.Reason)));
     }

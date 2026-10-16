@@ -97,19 +97,19 @@ public class ProcessingTaskTests(SqlFixture db) : IClassFixture<SqlFixture>
     }
 
     [Fact]
-    public async Task Work_that_sends_drawings_to_a_hosted_model_cannot_be_queued_without_an_approval()
+    public async Task Work_that_sends_drawings_to_a_hosted_model_cannot_be_queued_without_a_real_approval()
     {
         var (job, token) = await NewJobAsync();
         var producer = await ProducerAsync();
 
         var refused = await Assert.ThrowsAsync<JobRuleViolationException>(() => Tasks().EnqueueAsync(
             new NewProcessingTask { JobId = job.JobId, TaskType = "crop-classify", ProducerId = producer, SendsDrawingContentToHostedModel = true }, token, Ctx(Editor)));
-        Assert.Contains("approval", refused.Message);
+        Assert.Contains("hosted model", refused.Message);
 
-        var approved = await Tasks().EnqueueAsync(
+        // A made-up approval id is not an approval: the approval must exist, be live and be for this model (see VisionTests).
+        await Assert.ThrowsAsync<JobRuleViolationException>(() => Tasks().EnqueueAsync(
             new NewProcessingTask { JobId = job.JobId, TaskType = "crop-classify", ProducerId = producer, SendsDrawingContentToHostedModel = true, VisionApprovalId = 77 },
-            token, Ctx(Editor));
-        Assert.Equal(77, approved.VisionApprovalId);
+            token, Ctx(Editor)));
 
         // And the database refuses it even if the check above were bypassed.
         await Assert.ThrowsAsync<SqlException>(() => db.ExecAsync(

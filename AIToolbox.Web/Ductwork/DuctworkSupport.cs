@@ -7,6 +7,7 @@ using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
+using AIToolbox.Ductwork.Core.Llm;
 using AIToolbox.Ductwork.Core.Review;
 using AIToolbox.Ductwork.Core.Rules;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -196,6 +197,8 @@ public sealed class DuctworkApiExceptionAttribute : ExceptionFilterAttribute
         JobNotFoundException or KeyNotFoundException => (404, new { code = "not-found", error = ex.Message }),
         JobAccessDeniedException => (403, new { code = "forbidden", error = ex.Message }),
         JobConcurrencyException => (409, new { code = "version-conflict", error = ex.Message }),
+        VisionRefusedException refused => (refused.Code is "bad-request" or "image-rejected" ? 400 : 403, new { code = "vision-refused", reason = refused.Code, error = ex.Message }),
+        VisionProviderException => (502, new { code = "provider-error", error = ex.Message }),
         EntityConflictException conflict => (409, new { code = "version-conflict", error = ex.Message, actualRevision = conflict.Actual }),
         StaleEditTokenException => (409, new { code = "lock-lost", error = ex.Message }),
         JobLockedException => (409, new { code = "locked", error = ex.Message }),
@@ -250,6 +253,8 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new TaskResultIngestor(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<ReviewLevelSettings>()));
 
+        services.AddSingleton(sp => new VisionRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
+        services.AddScoped<DuctworkVisionGateway>();
         services.AddSingleton(sp => new RuleRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new FindingRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new EntityReviewRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
@@ -286,7 +291,7 @@ public sealed class DuctworkMigrationService(IOptions<DuctworkOptions> options, 
 /// Closes uploads nobody finished and frees their staging space. A database without the Ductwork schema is not an
 /// error here: the feature is off until the schema is applied on purpose, so the sweep just waits.
 /// </summary>
-public sealed class DuctworkUploadSweepService(UploadService uploads, ILogger<DuctworkUploadSweepService> logger) : BackgroundService
+public sealed class DuctworkUploadSweepService(UploadService uploads, VisionRepository vision, ILogger<DuctworkUploadSweepService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(15);
 
@@ -302,6 +307,8 @@ public sealed class DuctworkUploadSweepService(UploadService uploads, ILogger<Du
             {
                 var expired = await uploads.ExpireStaleAsync(AuditContext.ForSystem("upload sweep"), stoppingToken);
                 if (expired > 0) logger.LogInformation("Expired {Count} unfinished Ductwork upload(s).", expired);
+                var approvals = await vision.ExpireStaleAsync(stoppingToken);
+                if (approvals > 0) logger.LogInformation("Expired {Count} unused hosted-vision approval(s).", approvals);
             }
             catch (SqlException ex) when (ex.Number == 208)
             {

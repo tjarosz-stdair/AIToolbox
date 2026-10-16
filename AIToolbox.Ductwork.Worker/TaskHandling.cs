@@ -39,6 +39,13 @@ public sealed class TaskContext
     /// <summary>Progress the next heartbeat will report.</summary>
     public (int Done, int? Total, string? Message) Progress { get; private set; }
 
+    /// <summary>
+    /// Asks the server to show images to the hosted model this task was approved for. The server decides whether it may: a refusal is a
+    /// <see cref="VisionRefusedApiException"/>, and the task should end rather than try another way to read the page.
+    /// </summary>
+    public Task<VisionReply> SendVisionAsync(string directive, IReadOnlyList<Guid> sheetIds, IReadOnlyList<VisionImage> images, CancellationToken ct) =>
+        Api.SendVisionAsync(Task.TaskId, directive, sheetIds, images, ct);
+
     public void ReportProgress(int done, int? total = null, string? message = null) => Progress = (done, total, message);
 
     /// <summary>What the task is about. Asked once per task.</summary>

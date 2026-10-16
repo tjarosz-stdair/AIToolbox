@@ -146,8 +146,12 @@ public sealed class ProcessingTaskRepository
             t.RequireEditable();
             if (string.IsNullOrWhiteSpace(task.TaskType)) throw new JobRuleViolationException("A task needs a type.");
             if (task.MaxAttempts < 1) throw new JobRuleViolationException("A task needs at least one attempt.");
-            if (task.SendsDrawingContentToHostedModel && task.VisionApprovalId is null)
-                throw new JobRuleViolationException("A task that sends drawing content to a hosted model needs an approval for it.");
+            // Drawings go to a hosted model only under a live approval for this model. The check is made here, where the task is
+            // created, and again by the gateway before every send.
+            if (task.SendsDrawingContentToHostedModel)
+                task = task with { VisionApprovalId = await Llm.VisionRepository.BindApprovalAsync(t, task.VisionApprovalId, task.TaskType, task.ProducerId) };
+            else if (task.VisionApprovalId is not null)
+                throw new JobRuleViolationException("This task does not send drawings to a hosted model, so it cannot hold an approval for that.");
 
             if (task.ParentTaskId is { } parentId)
             {
@@ -180,6 +184,8 @@ public sealed class ProcessingTaskRepository
                 insert.Parameters.AddWithValue("@by", JobRepository.Actor(context));
                 id = (long)(await insert.ExecuteScalarAsync(t.Token))!;
             }
+
+            if (task.SendsDrawingContentToHostedModel) await Llm.VisionRepository.MarkUsedAsync(t, task.VisionApprovalId!.Value, id);
 
             var created = (await ReadAsync(t.Connection, t.Transaction, id, forUpdate: false, t.Token))!;
             await t.AuditForTaskAsync(new AuditEntry("processing", "task.enqueued", $"Queued a {created.TaskType} task.", "Task",

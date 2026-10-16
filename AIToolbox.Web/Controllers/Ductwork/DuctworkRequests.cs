@@ -29,7 +29,7 @@ public sealed record UpdateBuildingTypeRequest(string? Name, string? Kind, strin
 
 public sealed record SetMultiplierRequest(int? Multiplier, string? Source, string? Evidence);
 
-public sealed record EnqueueTaskRequest(string? TaskType, string? InputManifestRef, long? VisionApprovalId);
+public sealed record EnqueueTaskRequest(string? TaskType, string? InputManifestRef, Guid? VisionApprovalId);
 
 public sealed record TakeoverResponseRequest(bool HandOver);
 
@@ -60,6 +60,21 @@ public sealed record ReviewManyRequest(Guid[]? EntityIds, string? Status, string
 
 public sealed record AddEntityRequest(string? Type, string? Category, string? Tag, string? Size, string? Manufacturer, string? Model, string? CustomerPartCode, decimal? Quantity,
     string? Unit, long? BuildingTypeId, long? SheetViewId, string? Disposition, string? DispositionReason, double[]? Box, string? Evidence);
+
+// ---- hosted vision
+
+public sealed record VisionDisclosureRequest(Guid[]? SheetIds, int ProviderId);
+
+public sealed record CreateVisionApprovalRequest(Guid[]? SheetIds, int ProviderId, string? Reason, int AcknowledgedNoticeVersion);
+
+public sealed record RevokeVisionApprovalRequest(string? Reason);
+
+public sealed record VisionPolicyBody(bool Enabled, int[]? AllowedProviderIds, string? ApproverRule, string? NoticeText, int MaxPagesPerApproval, int MaxImagesPerPage, bool RequireReason,
+    int ApprovalLifetimeMinutes, string[]? StandingTaskTypes, int StandingMaxPagesPerJob);
+
+public sealed record VisionImageBody(string? Label, string? MediaType, string? DataBase64);
+
+public sealed record WorkerVisionRequest(string? WorkerName, string? Directive, Guid[]? SheetIds, VisionImageBody[]? Images);
 
 // ---- rules and findings
 

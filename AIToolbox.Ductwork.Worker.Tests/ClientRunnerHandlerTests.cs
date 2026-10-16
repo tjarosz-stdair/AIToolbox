@@ -138,6 +138,47 @@ public sealed class ApiClientTests
     }
 
     [Fact]
+    public async Task Images_go_to_the_server_as_base64_and_a_refusal_carries_its_reason()
+    {
+        var (client, http) = Build();
+        http.Script.Enqueue(_ => StubHttp.Json((HttpStatusCode)403, """{"code":"vision-refused","reason":"expired","error":"The approval has expired."}"""));
+        var sheet = Guid.NewGuid();
+
+        var error = await Assert.ThrowsAsync<VisionRefusedApiException>(() => client.SendVisionAsync(7, "classify", [sheet], [new VisionImage("crop", "image/png", [1, 2, 3])], default));
+
+        Assert.Equal(("expired", false), (error.Reason, error.IsTransient));
+        var (request, body) = http.Seen.Single();
+        Assert.EndsWith("tasks/7/vision", request.RequestUri!.AbsolutePath);
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal(Convert.ToBase64String([1, 2, 3]), json.RootElement.GetProperty("images")[0].GetProperty("dataBase64").GetString());
+        Assert.Equal(sheet, json.RootElement.GetProperty("sheetIds")[0].GetGuid());
+    }
+
+    [Fact]
+    public async Task A_vision_send_is_never_repeated_on_a_server_error_because_each_send_spends_the_approved_budget()
+    {
+        var (client, http) = Build();
+        http.Script.Enqueue(_ => StubHttp.Json(HttpStatusCode.BadGateway, """{"code":"provider-error","error":"The provider timed out."}"""));
+        http.Script.Enqueue(_ => StubHttp.Json(HttpStatusCode.OK, """{"text":"ok","transmissionId":1,"imagesSent":1,"provider":"p","model":"m"}"""));
+
+        var error = await Assert.ThrowsAsync<ApiException>(() => client.SendVisionAsync(7, "classify", [Guid.NewGuid()], [new VisionImage(null, "image/png", [1])], default));
+
+        Assert.Equal(502, error.Status);
+        Assert.Single(http.Seen);
+    }
+
+    [Fact]
+    public async Task A_successful_vision_answer_is_read()
+    {
+        var (client, http) = Build();
+        http.Script.Enqueue(_ => StubHttp.Json(HttpStatusCode.OK, """{"text":"{\"type\":\"Boot\"}","finishReason":"stop","inputTokens":5,"outputTokens":2,"transmissionId":9,"imagesSent":1,"provider":"Foundry","model":"vision-1"}"""));
+
+        var reply = await client.SendVisionAsync(7, "classify", [Guid.NewGuid()], [new VisionImage(null, "image/png", [1])], default);
+
+        Assert.Equal(("{\"type\":\"Boot\"}", 9L, "vision-1"), (reply.Text, reply.TransmissionId, reply.Model));
+    }
+
+    [Fact]
     public async Task A_file_is_streamed_to_the_destination()
     {
         var (client, http) = Build();

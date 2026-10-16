@@ -2,6 +2,7 @@ using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Jobs;
+using AIToolbox.Ductwork.Core.Llm;
 using AIToolbox.Ductwork.Core.Tasks;
 using AIToolbox.Web.Ductwork;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,8 @@ public sealed class DuctworkJobsController(
     ProcessingTaskRepository tasks,
     EntityRepository entities,
     CountSheetRepository countSheets,
-    ActivityRepository activity) : DuctworkUserApiController
+    ActivityRepository activity,
+    VisionRepository vision) : DuctworkUserApiController
 {
     // ------------------------------------------------------------------ jobs
 
@@ -192,7 +194,10 @@ public sealed class DuctworkJobsController(
     {
         var audit = Audit();
         var token = await locks.ResolveTokenAsync(jobId, FencingToken(), audit, ct);
-        var task = await tasks.EnqueueByTypeAsync(jobId, request.TaskType ?? "", request.InputManifestRef, request.VisionApprovalId, token, audit, ct);
+        long? approval = null;
+        if (request.VisionApprovalId is { } publicApproval)
+            approval = (await vision.GetApprovalAsync(jobId, publicApproval, ct) ?? throw new KeyNotFoundException("That approval does not exist.")).VisionApprovalId;
+        var task = await tasks.EnqueueByTypeAsync(jobId, request.TaskType ?? "", request.InputManifestRef, approval, token, audit, ct);
         return Json(task, 201);
     }
 
