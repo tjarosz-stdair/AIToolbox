@@ -27,7 +27,8 @@ public sealed record EntityRecord
     public decimal Quantity { get; init; }
     public QuantityUnit Unit { get; init; }
     public DetectionMethod Method { get; init; }
-    public DetectorFamily Family { get; init; }
+    /// <summary>Null for an item a person added.</summary>
+    public DetectorFamily? Family { get; init; }
     public double Confidence { get; init; }
     public SurfacedAs SurfacedAs { get; init; }
     public ReviewLevel ReviewLevelAtCreation { get; init; }
@@ -38,6 +39,10 @@ public sealed record EntityRecord
     public string? SheetViewRef { get; init; }
     public BoundingBox? Box { get; init; }
     public string? Evidence { get; init; }
+    /// <summary>Counts changes to the item. An edit says which revision it was made against, so two people cannot silently overwrite each other.</summary>
+    public int Revision { get; init; }
+    public long? SheetViewId { get; init; }
+    public string? DispositionReason { get; init; }
 }
 
 public sealed record EntityFilter
@@ -99,12 +104,12 @@ public sealed class EntityRepository
         return list;
     }
 
-    private const string Columns =
+    internal const string Columns =
         "EntityId, PublicId, JobId, BuildingTypeId, ProducerId, ProcessingTaskId, DetectionId, Type, Category, Tag, Size, Manufacturer, Model, CustomerPartCode, " +
         "Quantity, Unit, Method, Family, Confidence, SurfacedAs, ReviewLevelAtCreation, ReviewStatus, Disposition, ResolutionSource, IsStale, SheetViewRef, " +
-        "BoxX0, BoxY0, BoxX1, BoxY1, Evidence";
+        "BoxX0, BoxY0, BoxX1, BoxY1, Evidence, Revision, SheetViewId, DispositionReason";
 
-    private static EntityRecord Map(SqlDataReader r) => new()
+    internal static EntityRecord Map(SqlDataReader r) => new()
     {
         EntityId = r.GetInt64(0),
         PublicId = r.GetGuid(1),
@@ -123,7 +128,7 @@ public sealed class EntityRepository
         Quantity = r.GetDecimal(14),
         Unit = Enum.Parse<QuantityUnit>(r.GetString(15)),
         Method = Enum.Parse<DetectionMethod>(r.GetString(16)),
-        Family = Enum.Parse<DetectorFamily>(r.GetString(17)),
+        Family = r.IsDBNull(17) ? null : Enum.Parse<DetectorFamily>(r.GetString(17)),
         Confidence = r.GetDouble(18),
         SurfacedAs = Enum.Parse<SurfacedAs>(r.GetString(19)),
         ReviewLevelAtCreation = Enum.Parse<ReviewLevel>(r.GetString(20)),
@@ -133,7 +138,10 @@ public sealed class EntityRepository
         IsStale = r.GetBoolean(24),
         SheetViewRef = S(r, 25),
         Box = r.IsDBNull(26) ? null : new BoundingBox(r.GetDouble(26), r.GetDouble(27), r.GetDouble(28), r.GetDouble(29)),
-        Evidence = S(r, 30)
+        Evidence = S(r, 30),
+        Revision = r.GetInt32(31),
+        SheetViewId = r.IsDBNull(32) ? null : r.GetInt64(32),
+        DispositionReason = S(r, 33)
     };
 
     private static string? S(SqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);

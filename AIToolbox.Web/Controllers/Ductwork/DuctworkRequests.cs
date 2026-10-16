@@ -47,6 +47,20 @@ public sealed record WorkerHeartbeatRequest(string? WorkerName, int Done, int? T
 
 public sealed record WorkerFailRequest(string? WorkerName, string? Error, bool Retryable);
 
+// ---- review
+
+public sealed record EditEntityRequest(int ExpectedRevision, string? Reason, string? Type, string? Category, string? Tag, string? Size, string? Manufacturer, string? Model,
+    string? CustomerPartCode, decimal? Quantity, string? Unit, long? BuildingTypeId, bool ClearBuildingType, long? SheetViewId, bool ClearSheetView);
+
+public sealed record SetReviewRequest(string? Status, int ExpectedRevision, string? Reason);
+
+public sealed record SetDispositionRequest(string? Disposition, int ExpectedRevision, string? Reason);
+
+public sealed record ReviewManyRequest(Guid[]? EntityIds, string? Status, string? Reason);
+
+public sealed record AddEntityRequest(string? Type, string? Category, string? Tag, string? Size, string? Manufacturer, string? Model, string? CustomerPartCode, decimal? Quantity,
+    string? Unit, long? BuildingTypeId, long? SheetViewId, string? Disposition, string? DispositionReason, double[]? Box, string? Evidence);
+
 // ---- sheets and views
 
 public sealed record SheetBody(int PageNo, double WidthPts, double HeightPts, int Rotation, string? SheetNumber, string? Title, string? Discipline, string? Kind,

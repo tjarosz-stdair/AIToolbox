@@ -195,6 +195,7 @@ public sealed class DuctworkApiExceptionAttribute : ExceptionFilterAttribute
         JobNotFoundException or KeyNotFoundException => (404, new { code = "not-found", error = ex.Message }),
         JobAccessDeniedException => (403, new { code = "forbidden", error = ex.Message }),
         JobConcurrencyException => (409, new { code = "version-conflict", error = ex.Message }),
+        EntityConflictException conflict => (409, new { code = "version-conflict", error = ex.Message, actualRevision = conflict.Actual }),
         StaleEditTokenException => (409, new { code = "lock-lost", error = ex.Message }),
         JobLockedException => (409, new { code = "locked", error = ex.Message }),
         UploadOffsetException offset => (409, new { code = "offset-mismatch", error = ex.Message, expectedOffset = offset.Expected }),
@@ -248,6 +249,7 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new TaskResultIngestor(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<ReviewLevelSettings>()));
 
+        services.AddSingleton(sp => new EntityReviewRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new SheetRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
 
         services.AddHostedService<DuctworkMigrationService>();

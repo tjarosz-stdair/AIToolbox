@@ -236,6 +236,9 @@ public sealed class ApiHarness(DuctworkDatabase db)
         return (tab, reply["fencingToken"].GetInt64());
     }
 
+    public DuctworkReviewController ReviewApi(string email, string tab, long? fencing = null) =>
+        With(new DuctworkReviewController(JobRepo, LockService, new EntityReviewRepository(Open)), Person(email), tab, fencing);
+
     public DuctworkSheetsController SheetsApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkSheetsController(JobRepo, LockService, new SheetRepository(Open)), Person(email), tab, fencing);
 

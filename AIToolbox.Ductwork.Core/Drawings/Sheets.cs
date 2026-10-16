@@ -368,6 +368,8 @@ public sealed class SheetRepository
         InViewAsync(viewId, context, cancellationToken, editToken, async (t, view, sheet) =>
         {
             t.RequireEditable();
+            var placed = await ScalarAsync(t, "SELECT COUNT(*) FROM ductwork.Entity WHERE SheetViewId = @id;", ("@id", viewId));
+            if (placed > 0) throw new JobRuleViolationException($"This view has {placed} counted item(s) placed on it. Move or reject them first.");
             await JobRepository.ExecAsync(t.Connection, t.Transaction, "DELETE FROM ductwork.SheetView WHERE SheetViewId = @id;", t.Token, ("@id", viewId));
             await t.AuditAtCurrentVersionAsync(new AuditEntry("sheets", "view.deleted", $"Removed the view \"{view.Title}\" from sheet {Label(sheet)}.", "SheetView", view.PublicId.ToString("D"),
                 JobRepository.Json(new() { ["title"] = view.Title, ["scale"] = view.ScaleRatio }), null));
