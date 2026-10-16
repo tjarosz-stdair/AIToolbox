@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Data;
+using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Review;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -24,6 +25,14 @@ public static class DuctworkTool
 
     public const string TabHeader = "X-Ductwork-Tab";
     public const string FencingHeader = "X-Ductwork-Fencing-Token";
+}
+
+public static class DuctworkUploadLimits
+{
+    /// <summary>The largest single piece of an upload. The request-size limit on the endpoint is this plus headroom.</summary>
+    public const long MaxChunkBytes = 24L * 1024 * 1024;
+
+    public const long MaxRequestBytes = 32L * 1024 * 1024;
 }
 
 public static class DuctworkPolicies
@@ -52,6 +61,27 @@ public sealed class DuctworkOptions
 
     /// <summary>The largest result a worker may submit for one task.</summary>
     public long MaxResultBytes { get; set; } = 100L * 1024 * 1024;
+
+    /// <summary>
+    /// The folder drawing files are stored in. Blank means <c>App_Data/ductwork</c> under the app. Point it at
+    /// storage that is backed up and has room for the drawings; the app pool needs to write there.
+    /// </summary>
+    public string? ArtifactRoot { get; set; }
+
+    /// <summary>The size the browser cuts a file into. Kept well under the request limits of IIS and the proxy in front of it.</summary>
+    public long UploadChunkBytes { get; set; } = 8L * 1024 * 1024;
+
+    public long MaxUploadBytes { get; set; } = 1024L * 1024 * 1024;
+    public int UploadSessionHours { get; set; } = 24;
+    public int MaxOpenUploadsPerJob { get; set; } = 5;
+
+    public UploadSettings ToUploadSettings() => new()
+    {
+        ChunkBytes = Math.Clamp(UploadChunkBytes, 64 * 1024, DuctworkUploadLimits.MaxChunkBytes),
+        MaxFileBytes = Math.Max(1024 * 1024, MaxUploadBytes),
+        SessionLifetime = TimeSpan.FromHours(Math.Max(1, UploadSessionHours)),
+        MaxOpenPerJob = Math.Max(1, MaxOpenUploadsPerJob)
+    };
 
     public LockSettings ToLockSettings() => new()
     {
@@ -167,6 +197,9 @@ public sealed class DuctworkApiExceptionAttribute : ExceptionFilterAttribute
         JobConcurrencyException => (409, new { code = "version-conflict", error = ex.Message }),
         StaleEditTokenException => (409, new { code = "lock-lost", error = ex.Message }),
         JobLockedException => (409, new { code = "locked", error = ex.Message }),
+        UploadOffsetException offset => (409, new { code = "offset-mismatch", error = ex.Message, expectedOffset = offset.Expected }),
+        UploadBusyException => (409, new { code = "busy", error = ex.Message }),
+        ChunkIntegrityException => (422, new { code = "checksum", error = ex.Message }),
         ResultRejectedException rejected => (422, new { code = "result-rejected", error = ex.Message, reasons = rejected.Reasons }),
         JobRuleViolationException => (422, new { code = "rule", error = ex.Message }),
         ArgumentException => (400, new { code = "bad-request", error = ex.Message }),
@@ -192,6 +225,16 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ToLockSettings());
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ToTaskSettings());
         services.AddSingleton(new ReviewLevelSettings());
+        services.AddSingleton<IArtifactStore>(sp =>
+        {
+            var configured = sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ArtifactRoot;
+            var root = string.IsNullOrWhiteSpace(configured)
+                ? Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "App_Data", "ductwork")
+                : configured;
+            return new FileSystemArtifactStore(root);
+        });
+        services.AddSingleton(sp => new UploadService(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
+            sp.GetRequiredService<IArtifactStore>(), sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ToUploadSettings()));
 
         services.AddSingleton(sp => new JobRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new EditLockService(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(), sp.GetRequiredService<LockSettings>()));
@@ -206,6 +249,7 @@ public static class DuctworkServiceCollectionExtensions
             sp.GetRequiredService<ReviewLevelSettings>()));
 
         services.AddHostedService<DuctworkMigrationService>();
+        services.AddHostedService<DuctworkUploadSweepService>();
         return services;
     }
 }
@@ -229,4 +273,40 @@ public sealed class DuctworkMigrationService(IOptions<DuctworkOptions> options, 
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Closes uploads nobody finished and frees their staging space. A database without the Ductwork schema is not an
+/// error here: the feature is off until the schema is applied on purpose, so the sweep just waits.
+/// </summary>
+public sealed class DuctworkUploadSweepService(UploadService uploads, ILogger<DuctworkUploadSweepService> logger) : BackgroundService
+{
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(15);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // A short wait first, so startup is never slowed by housekeeping.
+        try { await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken); }
+        catch (OperationCanceledException) { return; }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                var expired = await uploads.ExpireStaleAsync(AuditContext.ForSystem("upload sweep"), stoppingToken);
+                if (expired > 0) logger.LogInformation("Expired {Count} unfinished Ductwork upload(s).", expired);
+            }
+            catch (SqlException ex) when (ex.Number == 208)
+            {
+                logger.LogDebug("The Ductwork schema is not applied yet; the upload sweep has nothing to do.");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "The Ductwork upload sweep failed; it will try again later.");
+            }
+
+            try { await Task.Delay(Interval, stoppingToken); }
+            catch (OperationCanceledException) { return; }
+        }
+    }
 }

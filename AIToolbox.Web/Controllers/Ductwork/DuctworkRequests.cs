@@ -33,6 +33,8 @@ public sealed record EnqueueTaskRequest(string? TaskType, string? InputManifestR
 
 public sealed record TakeoverResponseRequest(bool HandOver);
 
+public sealed record BeginUploadRequest(string? FileName, long TotalBytes, string? Sha256);
+
 public sealed record BindTaskRequest(string? TaskType, long ProducerId, int EvalRunId, bool SendsDrawingContent, int MaxAttempts);
 
 // ---- worker

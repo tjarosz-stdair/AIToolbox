@@ -3,6 +3,7 @@ using System.Text.Json;
 using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
+using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -69,6 +70,9 @@ public sealed class DuctworkDatabase : IAsyncLifetime
 /// <summary>What a controller call returned: the HTTP status and the JSON body, as a client would see them.</summary>
 public sealed record Reply(int Status, JsonElement Body)
 {
+    /// <summary>The content of a file answer. The caller disposes it.</summary>
+    public Stream? Stream { get; init; }
+
     public JsonElement this[string property] => Body.GetProperty(property);
     public string Code => Body.TryGetProperty("code", out var c) ? c.GetString() ?? "" : "";
     public bool Ok => Status is >= 200 and < 300;
@@ -99,6 +103,11 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public JobRepository JobRepo => new(Open);
     public EditLockService LockService => new(Open, Locks);
     public ProcessingTaskRepository TaskRepo => new(Open, TaskSettings);
+
+    /// <summary>A private folder for this harness's drawing files, so tests never share storage.</summary>
+    public string ArtifactRoot { get; } = Path.Combine(Path.GetTempPath(), "ductwork-web-artifacts-" + Guid.NewGuid().ToString("N"));
+
+    public UploadService Uploads => new(Open, new FileSystemArtifactStore(ArtifactRoot), new UploadSettings { ChunkBytes = 1000 });
     public TaskBindingRepository BindingRepo => new(Open);
 
     private static int _tab;
@@ -142,6 +151,19 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkBuildingTypesController TypesApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkBuildingTypesController(JobRepo, LockService, new BuildingTypeRepository(Open)), Person(email), tab, fencing);
 
+    public DuctworkUploadsController UploadsApi(string email, string tab, long? fencing = null, Stream? body = null, string? chunkSha256 = null)
+    {
+        var controller = With(new DuctworkUploadsController(JobRepo, LockService, Uploads), Person(email), tab, fencing);
+        if (body is not null)
+        {
+            controller.HttpContext.Request.Body = body;
+            if (body.CanSeek) controller.HttpContext.Request.ContentLength = body.Length;
+        }
+
+        if (chunkSha256 is not null) controller.HttpContext.Request.Headers[DuctworkUploadsController.ChunkChecksumHeader] = chunkSha256;
+        return controller;
+    }
+
     public DuctworkAdminController AdminApi(string email = Admin, string? tab = null) =>
         With(new DuctworkAdminController(BindingRepo), Person(email, admin: true), tab ?? NewTab(), null);
 
@@ -184,6 +206,9 @@ public sealed class ApiHarness(DuctworkDatabase db)
             }
             case NoContentResult:
                 return new Reply(204, JsonDocument.Parse("null").RootElement.Clone());
+            case FileStreamResult file:
+                return new Reply(200, JsonDocument.Parse(JsonSerializer.Serialize(new { contentType = file.ContentType, downloadName = file.FileDownloadName })).RootElement.Clone())
+                    { Stream = file.FileStream };
             case StatusCodeResult status:
                 return new Reply(status.StatusCode, JsonDocument.Parse("null").RootElement.Clone());
             default:
