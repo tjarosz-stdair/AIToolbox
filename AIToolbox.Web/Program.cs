@@ -3,6 +3,7 @@ using AIToolbox.Web.Authorization;
 using AIToolbox.Web.Configuration;
 using AIToolbox.Web.Controllers;
 using AIToolbox.Web.Data;
+using AIToolbox.Web.Ductwork;
 using AIToolbox.Web.Hubs;
 using AIToolbox.Web.Security;
 using AIToolbox.Web.Services;
@@ -50,6 +51,8 @@ if (!string.IsNullOrWhiteSpace(dataProtectionOptions.KeysPath))
     Directory.CreateDirectory(keysPath);
     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
 }
+
+builder.Services.AddDuctwork(builder.Configuration);
 
 builder.Services.AddHttpClient("AiProviders", client =>
 {
@@ -323,6 +326,8 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.RequireRole("ApiConsumer");
     });
+
+    options.AddDuctworkPolicies();
 
     options.AddPolicy("BatchApiAccess", policy =>
     {

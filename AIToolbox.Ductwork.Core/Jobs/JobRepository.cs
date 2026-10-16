@@ -97,6 +97,13 @@ public sealed class JobRepository
         return jobs;
     }
 
+    /// <summary>What a person may do on a job: their membership and whether they hold the Job Manager permission. Used to decide what to show and to hide jobs from people with no access.</summary>
+    public async Task<(JobRole? Role, bool IsJobManager)> GetAccessAsync(long jobId, string email, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _open(cancellationToken);
+        return await JobAccess.LoadAsync(connection, null, jobId, AuditContext.Normalize(email), cancellationToken);
+    }
+
     public async Task<IReadOnlyList<JobMemberRecord>> GetMembersAsync(long jobId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _open(cancellationToken);

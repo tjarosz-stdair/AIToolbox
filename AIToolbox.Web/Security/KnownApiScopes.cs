@@ -18,6 +18,9 @@ public static class KnownApiScopes
     public const string CallTranscriptsWrite = "calltranscripts:write";
     public const string CallEventsDisposition = "callevents:disposition";
 
+    /// <summary>The central Ductwork worker: claim tasks, report progress and submit results. Also needs tool:DuctworkTakeoff.</summary>
+    public const string DuctworkWorker = "ductwork:worker";
+
     /// <summary>Value + a plain-English description of what it grants -- backs the admin scope
     /// picker's legend (ApiConsumersController.GetAvailableScopesAsync). Add a new fixed scope by
     /// adding both the constant above and an entry here; the legend and picker pick it up with no
@@ -35,7 +38,10 @@ public static class KnownApiScopes
             "(POST /api/v1/call-transcripts/...). Required for the admin Live Call Monitor to receive anything."),
         new(CallEventsDisposition,
             "Report what happened to a detected-entity prompt card " +
-            "(POST /api/v1/call-events/{id}/disposition), e.g. that an agent clicked an action.")
+            "(POST /api/v1/call-events/{id}/disposition), e.g. that an agent clicked an action."),
+        new(DuctworkWorker,
+            "Run as the central Ductwork worker for this instance: claim tasks, send heartbeats and submit results " +
+            "(/api/v1/ductwork/worker/...). Also requires the tool:DuctworkTakeoff scope. Grants no access to jobs or users.")
     ];
 }
 

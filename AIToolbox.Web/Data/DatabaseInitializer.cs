@@ -1180,6 +1180,17 @@ public sealed class DatabaseInitializer
                  1, 'OpenToAllAuthenticated', SYSUTCDATETIME(), SYSUTCDATETIME());
         END;
 
+        -- Additive and off by default: registering the tool changes nothing for anyone until an administrator enables it.
+        IF NOT EXISTS (SELECT 1 FROM dbo.ToolDefinitions WHERE ToolKey = 'DuctworkTakeoff')
+        BEGIN
+            INSERT INTO dbo.ToolDefinitions
+                (ToolKey, DisplayName, Description, IsEnabled, AccessMode, CreatedUtc, UpdatedUtc)
+            VALUES
+                ('DuctworkTakeoff', 'Ductwork Takeoff',
+                 'Reads mechanical drawings, proposes counts of ductwork items for a person to verify, and produces a count sheet.',
+                 0, 'RequiresApproval', SYSUTCDATETIME(), SYSUTCDATETIME());
+        END;
+
         IF NOT EXISTS (SELECT 1 FROM dbo.ToolDefinitions WHERE ToolKey = 'PicSearchChat')
         BEGIN
             INSERT INTO dbo.ToolDefinitions

@@ -107,6 +107,27 @@ public static class ProducerStore
         }
     }
 
+    /// <summary>Reads a producer back as it was recorded, so a worker can be told exactly which algorithm or model a task expects.</summary>
+    public static async Task<ProducerRef?> GetAsync(SqlConnection connection, long producerId, CancellationToken cancellationToken = default)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT Kind, DirectiveSnapshotId, ProviderSnapshotId, AlgorithmName, AlgorithmVersion, ParamsHash, UserEmail FROM ductwork.Producer WHERE ProducerId = @p;";
+        command.Parameters.AddWithValue("@p", producerId);
+        await using var r = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await r.ReadAsync(cancellationToken)) return null;
+        return new ProducerRef
+        {
+            Kind = Enum.Parse<ProducerKind>(r.GetString(0)),
+            DirectiveSnapshotId = r.IsDBNull(1) ? null : r.GetInt32(1),
+            ProviderSnapshotId = r.IsDBNull(2) ? null : r.GetInt32(2),
+            AlgorithmName = r.IsDBNull(3) ? null : r.GetString(3),
+            AlgorithmVersion = r.IsDBNull(4) ? null : r.GetString(4),
+            ParamsHash = r.IsDBNull(5) ? null : r.GetString(5),
+            UserEmail = r.IsDBNull(6) ? null : r.GetString(6)
+        };
+    }
+
     private static async Task<int?> FindProviderSnapshotAsync(SqlConnection connection, string hash, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
