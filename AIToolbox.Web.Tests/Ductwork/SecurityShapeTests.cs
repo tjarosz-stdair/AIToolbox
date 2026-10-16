@@ -57,7 +57,7 @@ public class SecurityShapeTests
 
     private static IEnumerable<Type> Controllers() =>
         typeof(DuctworkJobsController).Assembly.GetTypes()
-            .Where(t => t.Namespace == "AIToolbox.Web.Controllers.Ductwork" && typeof(ControllerBase).IsAssignableFrom(t) && !t.IsAbstract);
+            .Where(t => t.Namespace == "AIToolbox.Web.Controllers.Ductwork" && typeof(ControllerBase).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(DuctworkAppController));
 
     [Fact]
     public void Every_ductwork_controller_requires_a_policy_and_maps_data_layer_refusals()
@@ -108,5 +108,14 @@ public class SecurityShapeTests
     {
         Assert.Equal(404, DuctworkApiExceptionAttribute.Map(new AIToolbox.Ductwork.Core.Jobs.JobNotFoundException(1))!.Value.Status);
         Assert.Null(DuctworkApiExceptionAttribute.Map(new InvalidOperationException("boom")));
+    }
+
+    [Fact]
+    public void The_pages_need_the_user_policy_and_the_settings_page_needs_an_administrator()
+    {
+        Assert.Equal(DuctworkPolicies.User, typeof(DuctworkAppController).GetCustomAttribute<AuthorizeAttribute>()!.Policy);
+        Assert.False(typeof(DuctworkAppController).GetCustomAttributes<AllowAnonymousAttribute>(true).Any());
+        var admin = typeof(DuctworkAppController).GetMethod(nameof(DuctworkAppController.Admin))!;
+        Assert.Equal("AdminOnly", admin.GetCustomAttribute<AuthorizeAttribute>()!.Policy);
     }
 }

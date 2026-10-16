@@ -21,6 +21,10 @@ public sealed class DuctworkAdminController(TaskBindingRepository bindings) : Co
     public async Task<IActionResult> List([FromQuery] bool includeRetired, CancellationToken ct) =>
         DuctworkJson.Result(await bindings.ListAsync(includeRetired, ct));
 
+    /// <summary>Producers that have been evaluated, with their evaluation runs, so a task type can be bound to one.</summary>
+    [HttpGet("producers")]
+    public async Task<IActionResult> Producers(CancellationToken ct) => DuctworkJson.Result(await bindings.ListBindableProducersAsync(ct));
+
     [HttpPost]
     public async Task<IActionResult> Bind([FromBody] BindTaskRequest request, CancellationToken ct) =>
         DuctworkJson.Result(await bindings.BindAsync(request.TaskType ?? "", request.ProducerId, request.EvalRunId, request.SendsDrawingContent,

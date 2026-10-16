@@ -214,6 +214,10 @@ public sealed class ApiHarness(DuctworkDatabase db)
             case FileStreamResult file:
                 return new Reply(200, JsonDocument.Parse(JsonSerializer.Serialize(new { contentType = file.ContentType, downloadName = file.FileDownloadName })).RootElement.Clone())
                     { Stream = file.FileStream };
+            case ViewResult view:
+                return new Reply(200, JsonDocument.Parse(JsonSerializer.Serialize(new { model = view.Model }, DuctworkJson.Options)).RootElement.Clone());
+            case NotFoundResult:
+                return new Reply(404, JsonDocument.Parse("null").RootElement.Clone());
             case StatusCodeResult status:
                 return new Reply(status.StatusCode, JsonDocument.Parse("null").RootElement.Clone());
             default:
@@ -252,11 +256,17 @@ public sealed class ApiHarness(DuctworkDatabase db)
     public DuctworkVisionAdminController VisionAdminApi() =>
         With(new DuctworkVisionAdminController(new VisionRepository(Open), Providers), Person(Admin, admin: true), NewTab(), null);
 
+    public DuctworkAppController AppPages(string email, bool admin = false) =>
+        With(new DuctworkAppController(JobRepo), Person(email, admin), NewTab(), null);
+
+    public DuctworkCatalogController CatalogApi(string email) =>
+        With(new DuctworkCatalogController(BindingRepo), Person(email), NewTab(), null);
+
     public DuctworkRulesController RulesApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkRulesController(JobRepo, LockService, new RuleRepository(Open), new FindingRepository(Open), new SheetRepository(Open)), Person(email), tab, fencing);
 
     public DuctworkReviewController ReviewApi(string email, string tab, long? fencing = null) =>
-        With(new DuctworkReviewController(JobRepo, LockService, new EntityReviewRepository(Open)), Person(email), tab, fencing);
+        With(new DuctworkReviewController(JobRepo, LockService, new EntityReviewRepository(Open), new SheetRepository(Open)), Person(email), tab, fencing);
 
     public DuctworkSheetsController SheetsApi(string email, string tab, long? fencing = null) =>
         With(new DuctworkSheetsController(JobRepo, LockService, new SheetRepository(Open)), Person(email), tab, fencing);

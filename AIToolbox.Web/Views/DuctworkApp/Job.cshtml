@@ -1,0 +1,10 @@
+@model AIToolbox.Web.Controllers.Ductwork.DuctworkPageModel
+@{
+    ViewData["Title"] = "Ductwork job";
+}
+<link rel="stylesheet" href="~/css/ductwork.css" asp-append-version="true" />
+<partial name="_Boot" model="Model" />
+<div id="dw-app" data-page="job"><noscript>This page needs JavaScript.</noscript></div>
+@section Scripts {
+    <script type="module" src="~/js/ductwork/workbench.js" asp-append-version="true"></script>
+}

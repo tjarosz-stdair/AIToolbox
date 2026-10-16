@@ -1,5 +1,6 @@
 using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Counting;
+using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Web.Ductwork;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,7 @@ namespace AIToolbox.Web.Controllers.Ductwork;
 /// token and says which revision of the item it was made against, so two people cannot silently overwrite each other.
 /// </summary>
 [Route("ductwork/api/jobs/{jobId:long}")]
-public sealed class DuctworkReviewController(JobRepository jobs, EditLockService locks, EntityReviewRepository review) : DuctworkUserApiController
+public sealed class DuctworkReviewController(JobRepository jobs, EditLockService locks, EntityReviewRepository review, SheetRepository sheets) : DuctworkUserApiController
 {
     [HttpGet("entities/{entityId:guid}")]
     public async Task<IActionResult> Get(long jobId, Guid entityId, CancellationToken ct)
@@ -69,7 +70,7 @@ public sealed class DuctworkReviewController(JobRepository jobs, EditLockService
         {
             Type = request.Type, Category = request.Category, Tag = request.Tag, Size = request.Size, Manufacturer = request.Manufacturer, Model = request.Model,
             CustomerPartCode = request.CustomerPartCode, Quantity = request.Quantity, Unit = DuctworkParse.OptionalEnum<QuantityUnit>(request.Unit, "unit"),
-            BuildingTypeId = request.BuildingTypeId, ClearBuildingType = request.ClearBuildingType, SheetViewId = request.SheetViewId, ClearSheetView = request.ClearSheetView
+            BuildingTypeId = request.BuildingTypeId, ClearBuildingType = request.ClearBuildingType, SheetViewId = await ViewIdAsync(jobId, request.ViewId, ct), ClearSheetView = request.ClearSheetView
         };
         return Json(await review.EditAsync(item.EntityId, edit, request.ExpectedRevision, request.Reason, token, audit, ct));
     }
@@ -86,7 +87,7 @@ public sealed class DuctworkReviewController(JobRepository jobs, EditLockService
         {
             Type = request.Type ?? "", Category = request.Category, Tag = request.Tag, Size = request.Size, Manufacturer = request.Manufacturer, Model = request.Model,
             CustomerPartCode = request.CustomerPartCode, Quantity = request.Quantity ?? 1, Unit = DuctworkParse.OptionalEnum<QuantityUnit>(request.Unit, "unit") ?? QuantityUnit.EA,
-            BuildingTypeId = request.BuildingTypeId, SheetViewId = request.SheetViewId,
+            BuildingTypeId = request.BuildingTypeId, SheetViewId = await ViewIdAsync(jobId, request.ViewId, ct),
             Disposition = DuctworkParse.OptionalEnum<Disposition>(request.Disposition, "disposition") ?? Disposition.Included, DispositionReason = request.DispositionReason,
             Box = request.Box is { Length: 4 } b ? new BoundingBox(b[0], b[1], b[2], b[3]) : null, Evidence = request.Evidence
         };
@@ -109,6 +110,10 @@ public sealed class DuctworkReviewController(JobRepository jobs, EditLockService
         var token = await locks.ResolveTokenAsync(jobId, FencingToken(), audit, ct);
         return Json(await review.UndoLastAsync(jobId, token, audit, ct));
     }
+
+    /// <summary>A view is named by its public id inside the job. One from another job is simply not found.</summary>
+    private async Task<long?> ViewIdAsync(long jobId, Guid? publicId, CancellationToken ct) =>
+        publicId is { } id ? (await sheets.GetViewAsync(jobId, id, ct) ?? throw new KeyNotFoundException("That view does not exist.")).SheetViewId : null;
 
     private async Task<(AuditContext Audit, EditToken Token, EntityRecord Item)> EditAsync(long jobId, Guid entityId, CancellationToken ct)
     {

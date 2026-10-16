@@ -17,6 +17,11 @@ public sealed record TaskBindingRecord(
 /// enabled until it has been scored. Only an administrator changes bindings, every change is recorded in
 /// the settings audit log, and bindings are retired, never deleted.
 /// </summary>
+/// <summary>A producer an administrator could bind, with the evaluation runs that measured it.</summary>
+public sealed record BindableProducer(long ProducerId, string Kind, string Label, bool SupportsVision, IReadOnlyList<BindableEvalRun> EvalRuns);
+
+public sealed record BindableEvalRun(int EvalRunId, string TaskKey, DateTime StartedUtc, DateTime? FinishedUtc);
+
 public sealed class TaskBindingRepository
 {
     private readonly Func<CancellationToken, Task<SqlConnection>> _open;
@@ -48,6 +53,44 @@ public sealed class TaskBindingRepository
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) list.Add(Map(reader));
         return list;
+    }
+
+    /// <summary>The producers that have been evaluated at all, newest first, so an administrator can pick what to enable. A producer with no evaluation run cannot be bound and is not listed.</summary>
+    public async Task<IReadOnlyList<BindableProducer>> ListBindableProducersAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _open(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT p.ProducerId, p.Kind, p.AlgorithmName, p.AlgorithmVersion, p.UserEmail, ps.ModelName, ps.EndpointHost, ISNULL(ps.SupportsVision, 0),
+                   r.EvalRunId, r.TaskKey, r.StartedUtc, r.FinishedUtc
+            FROM ductwork.Producer p
+            JOIN ductwork.EvalRun r ON r.ProducerId = p.ProducerId
+            LEFT JOIN ductwork.ProviderSnapshot ps ON ps.ProviderSnapshotId = p.ProviderSnapshotId
+            ORDER BY p.ProducerId DESC, r.EvalRunId DESC;
+            """;
+        var map = new Dictionary<long, (string Kind, string Label, bool Vision, List<BindableEvalRun> Runs)>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var id = reader.GetInt64(0);
+            if (!map.TryGetValue(id, out var entry))
+            {
+                var kind = reader.GetString(1);
+                var label = kind switch
+                {
+                    "Algorithm" => $"{reader.GetString(2)} {reader.GetString(3)}",
+                    "Llm" => $"{(reader.IsDBNull(5) ? "model" : reader.GetString(5))} via {(reader.IsDBNull(6) ? "?" : reader.GetString(6))}",
+                    _ => $"Manual ({(reader.IsDBNull(4) ? "?" : reader.GetString(4))})"
+                };
+                entry = (kind, label, reader.GetBoolean(7), []);
+                map[id] = entry;
+            }
+
+            entry.Runs.Add(new BindableEvalRun(reader.GetInt32(8), reader.GetString(9), reader.GetDateTime(10), reader.IsDBNull(11) ? null : reader.GetDateTime(11)));
+        }
+
+        return map.Select(kv => new BindableProducer(kv.Key, kv.Value.Kind, kv.Value.Label, kv.Value.Vision, kv.Value.Runs)).ToList();
     }
 
     /// <summary>Enables a task type with a producer, replacing any active binding. The evaluation run must be of this exact producer.</summary>

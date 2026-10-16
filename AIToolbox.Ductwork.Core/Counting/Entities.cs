@@ -45,6 +45,9 @@ public sealed record EntityRecord
     public string? DispositionReason { get; init; }
     /// <summary>The rule version that last changed this item, when its resolution source is Rule.</summary>
     public long? ResolvedByRuleId { get; init; }
+    /// <summary>The public ids of the view and sheet this item has been placed on, if it has.</summary>
+    public Guid? ViewId { get; init; }
+    public Guid? SheetId { get; init; }
 }
 
 public sealed record EntityFilter
@@ -109,7 +112,10 @@ public sealed class EntityRepository
     internal const string Columns =
         "EntityId, PublicId, JobId, BuildingTypeId, ProducerId, ProcessingTaskId, DetectionId, Type, Category, Tag, Size, Manufacturer, Model, CustomerPartCode, " +
         "Quantity, Unit, Method, Family, Confidence, SurfacedAs, ReviewLevelAtCreation, ReviewStatus, Disposition, ResolutionSource, IsStale, SheetViewRef, " +
-        "BoxX0, BoxY0, BoxX1, BoxY1, Evidence, Revision, SheetViewId, DispositionReason, ResolvedByRuleId";
+        "BoxX0, BoxY0, BoxX1, BoxY1, Evidence, Revision, SheetViewId, DispositionReason, ResolvedByRuleId, " +
+        // The public ids of the view and sheet an item sits on, so a screen can place it without knowing internal ids.
+        "(SELECT v.PublicId FROM ductwork.SheetView v WHERE v.SheetViewId = ductwork.Entity.SheetViewId), " +
+        "(SELECT s.PublicId FROM ductwork.SheetView v JOIN ductwork.Sheet s ON s.SheetId = v.SheetId WHERE v.SheetViewId = ductwork.Entity.SheetViewId)";
 
     internal static EntityRecord Map(SqlDataReader r) => new()
     {
@@ -144,7 +150,9 @@ public sealed class EntityRepository
         Revision = r.GetInt32(31),
         SheetViewId = r.IsDBNull(32) ? null : r.GetInt64(32),
         DispositionReason = S(r, 33),
-        ResolvedByRuleId = r.IsDBNull(34) ? null : r.GetInt64(34)
+        ResolvedByRuleId = r.IsDBNull(34) ? null : r.GetInt64(34),
+        ViewId = r.IsDBNull(35) ? null : r.GetGuid(35),
+        SheetId = r.IsDBNull(36) ? null : r.GetGuid(36)
     };
 
     private static string? S(SqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);

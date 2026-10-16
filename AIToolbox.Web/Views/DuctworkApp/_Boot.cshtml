@@ -1,0 +1,11 @@
+@model AIToolbox.Web.Controllers.Ductwork.DuctworkPageModel
+@* The facts every Ductwork script starts from. Nothing here is secret, and nothing here decides what a person may do: the API does. *@
+<div id="dw-boot" hidden
+     data-api="@Url.Content("~/ductwork/api")"
+     data-base="@Url.Content("~/Ductwork")"
+     data-job-id="@Model.JobId"
+     data-email="@Model.Email"
+     data-admin="@(Model.IsAdmin ? "true" : "false")"
+     data-pdfjs="@Url.Content("~/lib/pdfjs/pdf.min.mjs")"
+     data-pdfjs-worker="@Url.Content("~/lib/pdfjs/pdf.worker.min.mjs")"></div>
+<form id="dw-token-form" class="d-none">@Html.AntiForgeryToken()</form>

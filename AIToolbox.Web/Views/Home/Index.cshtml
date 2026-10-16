@@ -21,11 +21,16 @@
     {
         var href = tool.ToolKey.Equals("ProductParser", StringComparison.OrdinalIgnoreCase)
             ? Url.Action("Index", "ProductParser")
-            : Url.Action("Index", "Home");
+            : tool.ToolKey.Equals("DuctworkTakeoff", StringComparison.OrdinalIgnoreCase)
+                ? Url.Content("~/Ductwork")
+                : Url.Action("Index", "Home");
         <a class="tool-directory-item" href="@href">
             <strong>@tool.DisplayName</strong>
             <span>@(string.IsNullOrWhiteSpace(tool.Description) ? "Configured tool." : tool.Description)</span>
-            <em>Available on the web and in the Chrome extension</em>
+            @if (!tool.ToolKey.Equals("DuctworkTakeoff", StringComparison.OrdinalIgnoreCase))
+            {
+                <em>Available on the web and in the Chrome extension</em>
+            }
         </a>
     }
 </div>

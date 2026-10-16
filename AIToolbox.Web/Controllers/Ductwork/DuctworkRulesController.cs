@@ -165,6 +165,13 @@ public sealed class DuctworkRulesController(JobRepository jobs, EditLockService 
         };
     }
 
+    private static IReadOnlyList<string> Candidates(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch (System.Text.Json.JsonException) { return []; }
+    }
+
     private static object RuleOf(RuleRecord r, IReadOnlyDictionary<long, Guid> sheetIds) => new
     {
         ruleId = r.PublicId, ruleKey = r.RuleKey, version = r.Version, name = r.Name, description = r.Description, scope = r.Scope, buildingTypeId = r.BuildingTypeId,
@@ -174,7 +181,7 @@ public sealed class DuctworkRulesController(JobRepository jobs, EditLockService 
 
     private static object FindingOf(FindingRecord f) => new
     {
-        findingId = f.PublicId, entityId = f.EntityPublicId, item = f.Item, kind = f.Kind, question = f.Question, evidence = f.Evidence, state = f.State,
+        findingId = f.PublicId, entityId = f.EntityPublicId, item = f.Item, kind = f.Kind, question = f.Question, candidates = Candidates(f.CandidatesJson), evidence = f.Evidence, state = f.State,
         resolvedByKind = f.ResolvedByKind, resolvedRuleId = f.ResolvedRulePublicId, resolvedBy = f.ResolvedBy, resolvedUtc = f.ResolvedUtc, resolutionNote = f.ResolutionNote,
         createdUtc = f.CreatedUtc
     };
