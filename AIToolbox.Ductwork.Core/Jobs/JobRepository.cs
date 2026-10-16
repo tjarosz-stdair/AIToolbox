@@ -25,7 +25,7 @@ public sealed class JobRepository
     public JobRepository(Func<CancellationToken, Task<SqlConnection>> openConnection, ICompletionProbe? probe = null)
     {
         _open = openConnection;
-        _probe = probe ?? new NoDetailCompletionProbe();
+        _probe = probe ?? new Counting.JobCompletionProbe();
     }
 
     public JobRepository(string connectionString, ICompletionProbe? probe = null)

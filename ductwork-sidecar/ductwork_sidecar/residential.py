@@ -124,7 +124,7 @@ def detect(layout: PageLayout, building_type: str | None = None, sheet_ref: str 
         det_id = ids.next()
         result.detections.append(
             _detection(det_id, TERMINAL_CFM_ONLY, None, "cfm-only", "Text", 0.3 * trust, building, sheet_ref, cfm.box,
-                       f"'{cfm.text}' has no size label", tag=f"{int(value)} CFM")
+                       f"'{cfm.text}' has no size label", tag=f"{int(value)} CFM", disposition="TBD")
         )
         result.findings.append(
             _finding(
@@ -282,7 +282,7 @@ def _cfm_candidates(sized, cfm_value: str) -> list[str]:
     return [size for size, _n in counts.most_common()]
 
 
-def _detection(det_id, type_, size, method_name, method, confidence, building, sheet_ref, box: Box, evidence, tag=None) -> dict:
+def _detection(det_id, type_, size, method_name, method, confidence, building, sheet_ref, box: Box, evidence, tag=None, disposition=None) -> dict:
     d = {
         "detectionId": det_id,
         "type": type_,
@@ -298,6 +298,8 @@ def _detection(det_id, type_, size, method_name, method, confidence, building, s
         d["size"] = size
     if tag is not None:
         d["tag"] = tag
+    if disposition is not None:
+        d["disposition"] = disposition
     if building:
         d["buildingType"] = building
     if sheet_ref:

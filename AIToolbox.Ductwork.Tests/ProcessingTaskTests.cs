@@ -1,4 +1,5 @@
 using AIToolbox.Ductwork.Contracts;
+using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -369,7 +370,7 @@ public class ProcessingTaskTests(SqlFixture db) : IClassFixture<SqlFixture>
     {
         var (job, token) = await NewJobAsync();
         var type = UniqueType();
-        var probe = new ProcessingTaskCompletionProbe();
+        var probe = new JobCompletionProbe();
         var jobs = Jobs(probe);
         foreach (var step in Enum.GetValues<WorkflowStep>())
             await jobs.SetWorkflowStepAsync(job.JobId, step, StepStatus.Done, token, Ctx(Editor));

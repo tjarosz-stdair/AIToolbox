@@ -168,6 +168,15 @@
               "string",
               "null"
             ]
+          },
+          "disposition": {
+            "enum": [
+              "Included",
+              "Excluded",
+              "FactoryFurnished",
+              "TBD",
+              null
+            ]
           }
         },
         "required": [

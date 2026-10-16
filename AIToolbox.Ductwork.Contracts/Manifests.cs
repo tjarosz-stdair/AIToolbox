@@ -42,6 +42,13 @@ public sealed record DetectionProposal
     public string? SheetViewRef { get; init; }
     public BoundingBox? Box { get; init; }
     public string? Evidence { get; init; }
+
+    /// <summary>
+    /// What the detector says about whether this counts. Leave it out for an ordinary item. A detector
+    /// that cannot say what an item is (a terminal labeled only with its airflow) sets TBD, so the item
+    /// is listed but never added into a total until a person or a rule resolves it.
+    /// </summary>
+    public Disposition? Disposition { get; init; }
 }
 
 /// <summary>A question the detector cannot resolve for the user (plan section 6.11).</summary>

@@ -61,20 +61,6 @@ public sealed record TaskSettings
 
 public sealed record TaskHeartbeatResult(bool Continue, bool CancelRequested);
 
-/// <summary>Counts tasks that are still queued or running, which block completing or closing a job.</summary>
-public sealed class ProcessingTaskCompletionProbe : ICompletionProbe
-{
-    public async Task<(int ActiveProcessingTasks, int UnconfirmedMultipliers)> GetAsync(
-        SqlConnection connection, SqlTransaction transaction, long jobId, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT COUNT(*) FROM ductwork.ProcessingTask WHERE JobId = @j AND Status IN ('Queued', 'Running');";
-        command.Parameters.AddWithValue("@j", jobId);
-        return ((int)(await command.ExecuteScalarAsync(cancellationToken))!, 0);
-    }
-}
-
 /// <summary>
 /// The work queue the central worker pulls from (plan sections 6.5 and 6.9). The worker never reads the
 /// database: it claims, heartbeats, reports and completes through the web app, which calls these methods.
@@ -124,7 +110,7 @@ public sealed class ProcessingTaskRepository
     public async Task<int> GetActiveCountAsync(long jobId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _open(cancellationToken);
-        return (await new ProcessingTaskCompletionProbe().GetAsync(connection, null!, jobId, cancellationToken)).ActiveProcessingTasks;
+        return (await new Counting.JobCompletionProbe().GetAsync(connection, null!, jobId, cancellationToken)).ActiveProcessingTasks;
     }
 
     // ------------------------------------------------------------------ enqueue
@@ -399,7 +385,7 @@ public sealed class ProcessingTaskRepository
         });
     }
 
-    private static async Task FinishAsync(JobTxn t, ProcessingTaskRecord task, ProcessingTaskStatus status, string? error, string? resultRef = null)
+    internal static async Task FinishAsync(JobTxn t, ProcessingTaskRecord task, ProcessingTaskStatus status, string? error, string? resultRef = null)
     {
         await JobRepository.ExecAsync(t.Connection, t.Transaction,
             """
@@ -472,7 +458,7 @@ public sealed class ProcessingTaskRepository
         "NotBeforeUtc, LeaseOwner, LeaseExpiresUtc, ProducerId, InputManifestRef, ResultManifestRef, ContractVersion, SendsDrawingContentToHostedModel, " +
         "VisionApprovalId, CreatedUtc, CreatedBy, StartedUtc, FinishedUtc, ErrorMessage";
 
-    private static async Task<ProcessingTaskRecord?> ReadAsync(SqlConnection c, SqlTransaction? tx, long taskId, bool forUpdate, CancellationToken ct)
+    internal static async Task<ProcessingTaskRecord?> ReadAsync(SqlConnection c, SqlTransaction? tx, long taskId, bool forUpdate, CancellationToken ct)
     {
         await using var command = c.CreateCommand();
         command.Transaction = tx;

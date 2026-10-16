@@ -57,6 +57,7 @@ def test_labels_tags_and_flags_are_counted_as_drawn(tmp_path):
     assert counts[("Grille", "12x24 RA")] == 1
     assert counts[("DryerBoot", "Dryer Boot")] == 1
     assert len(result.detections) == 11  # 4 boots, 3 tags, 3 pass-through flags, 1 dryer flag
+    assert all("disposition" not in d for d in result.detections)   # ordinary items say nothing: they are Included by default
 
 
 def test_a_pass_through_flag_is_one_detection_not_two(tmp_path):
@@ -117,6 +118,7 @@ def test_a_cfm_only_terminal_is_reported_with_candidates_and_never_sized(tmp_pat
     assert "size" not in orphan
     assert orphan["tag"] == "100 CFM"
     assert orphan["confidence"] <= 0.35
+    assert orphan["disposition"] == "TBD"   # listed, but never added into a total until a person or rule resolves it
     finding = next(f for f in result.findings if f["kind"] == "AmbiguousLabel")
     assert finding["candidates"] == ["4x10x7"]  # terminal sizes only: no fans or grilles
 
