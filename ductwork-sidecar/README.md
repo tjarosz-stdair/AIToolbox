@@ -34,6 +34,8 @@ pass-through flag" is reported as drawn, with a finding, and a rule (resolved by
 
 `tools/schedule_parity.py PLAN.pdf EVIDENCE.json` checks the schedule reader against an audited reference, mark by mark.
 
+`tools/eval_inputs.py sheets|schedules|residential ...` writes a gold file and result manifests for the evaluation CLI (`evalcli gold-import`, `evalcli record`, `evalcli runs`), which is what lets an administrator enable a task type for a detector. Arguments are paths; run `python tools/eval_inputs.py` for the forms.
+
 `tools/engine_parity.py` runs the wrapped commercial engine on a reference plan set and compares its
 summary with an audited reference workbook, line by line (exit code 0 means identical). It is the
 regression test for "wrapping the engine did not change its answers". The plan, settings and reference

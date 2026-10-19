@@ -164,3 +164,29 @@ def to_page_report(facts: SheetFacts, identity: SheetIdentity, views: list[dict]
         "sheetNumber": identity.sheet_number, "title": identity.title, "discipline": identity.discipline, "kind": identity.kind,
         "contentHash": facts.content_hash, "hasTextLayer": facts.has_text, "views": views or [],
     }
+
+
+# ---------------------------------------------------------------- what this reader is, for the result's producer
+
+
+ALGORITHM_NAME = "sheet-identifier"
+ALGORITHM_VERSION = "0.1.0"
+TASK_TYPE = "identify-sheets"
+
+
+def params_hash() -> str:
+    """A hash of everything that changes what is reported for a page: the version and what it recognises sheets, titles, kinds and views by."""
+    import hashlib
+    import json
+
+    from . import views
+
+    material = {
+        "version": ALGORITHM_VERSION, "number": SHEET_NO.pattern, "notSheet": _NOT_A_SHEET.pattern, "strip": TITLE_STRIP_FROM, "band": BOTTOM_BAND_FROM,
+        "noise": _NOISE.pattern, "titleWords": _TITLE_WORDS, "prefixes": _DISCIPLINE_BY_PREFIX, "scale": views.SCALE_RE.pattern, "nts": views.NTS_RE.pattern,
+    }
+    return hashlib.sha256(json.dumps(material, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def producer() -> dict:
+    return {"kind": "Algorithm", "algorithmName": ALGORITHM_NAME, "algorithmVersion": ALGORITHM_VERSION, "paramsHash": params_hash()}

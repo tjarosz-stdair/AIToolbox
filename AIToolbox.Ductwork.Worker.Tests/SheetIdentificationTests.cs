@@ -182,6 +182,30 @@ public sealed class SheetIdentificationTests : IDisposable
         Assert.Single(api.Registered);
     }
 
+    [Fact]
+    public async Task A_sheet_reader_that_identifies_itself_as_another_producer_than_the_binding_is_refused_before_anything_is_recorded()
+    {
+        var (context, api, _) = Setup();
+        var reader = ProducerRef.Algorithm("sheet-identifier", "0.1.0", "params-1");
+        var runner = new FakeRunner(args =>
+        {
+            Pages(args, (1, "M1.2", "Plan", "Mechanical"));
+            var path = Value(args, "--out");
+            var pages = JsonDocument.Parse(File.ReadAllText(path)).RootElement.GetProperty("pages");
+            File.WriteAllText(path, JsonSerializer.Serialize(new { producer = reader, pages }, ContractJson.Options));
+            return new ProcessResult(0, "", "");
+        });
+        var identification = new SheetIdentification(runner, Opts());
+
+        var ex = await Assert.ThrowsAsync<TaskFailedException>(() => identification.RecordMissingAsync(context, default, ProducerRef.Algorithm("sheet-identifier", "0.0.9", "params-1").Key()));
+
+        Assert.False(ex.Retryable);
+        Assert.Contains("identifies itself differently", ex.Message);
+        Assert.Empty(api.Registered);
+        // The same reader under the binding that names it is accepted.
+        Assert.Equal(1, await identification.RecordMissingAsync(context, default, reader.Key()));
+    }
+
     // ---- the residential detector reads the sheets itself when the job has none
 
     private static ProcessResult Residential(IReadOnlyList<string> args)

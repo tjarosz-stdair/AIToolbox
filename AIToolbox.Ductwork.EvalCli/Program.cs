@@ -10,11 +10,19 @@ using AIToolbox.Ductwork.Core.Rules;
 //                 [--mode count|box] [--rules rules.json] [--title "..."] [--note "..."]
 //                 [--md report.md] [--json report.json]
 //
+//   Database commands (connection from --connection or DUCTWORK_SQL):
+//   evalcli migrate --yes
+//   evalcli gold-import --name N --role Development|Holdout|Regression --file gold.json [--notes T]
+//   evalcli record --gold N --task-key K --family F --pred manifest.json [--pred-dir dir] [--mode count|box] [--notes T]
+//   evalcli runs
+//
 // Detector output must be a TaskResultManifest. It is validated with the same schema check and the
 // same semantic rules the web app applies on ingestion, so a detector that would be refused there is
 // refused here too.
 
-return Run(args);
+return args.Length > 0 && AIToolbox.Ductwork.EvalCli.DbCommands.Names.Contains(args[0])
+    ? await AIToolbox.Ductwork.EvalCli.DbCommands.RunAsync(args)
+    : Run(args);
 
 static int Run(string[] args)
 {

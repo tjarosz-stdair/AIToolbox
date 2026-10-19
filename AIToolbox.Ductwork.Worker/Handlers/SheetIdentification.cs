@@ -17,7 +17,7 @@ public sealed class SheetIdentification(IProcessRunner runner, IOptions<WorkerOp
     /// Identifies and records the pages of each file that are not recorded yet. Safe to repeat: pages already recorded are left alone, so a retry after
     /// a failure does the rest. Returns how many pages were recorded.
     /// </summary>
-    public async Task<int> RecordMissingAsync(TaskContext context, CancellationToken ct)
+    public async Task<int> RecordMissingAsync(TaskContext context, CancellationToken ct, string? expectedProducer = null)
     {
         var sidecar = options.Value.Sidecar;
         if (!IsAvailable)
@@ -49,6 +49,11 @@ public sealed class SheetIdentification(IProcessRunner runner, IOptions<WorkerOp
             try
             {
                 using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(outPath, ct));
+                // When the task is the sheet-identification task itself, the server holds it to one producer, so a reader that says it is another is caught here.
+                if (expectedProducer is not null && doc.RootElement.TryGetProperty("producer", out var reported)
+                    && reported.Deserialize<ProducerRef>(ContractJson.Options)?.Key() is { } actual && actual != expectedProducer)
+                    throw new TaskFailedException(
+                        $"The sheet reader on this worker identifies itself differently from the binding for this task type ({actual} instead of {expectedProducer}). Update the worker or the binding.", retryable: false);
                 pages = doc.RootElement.GetProperty("pages").Deserialize<List<PageReport>>(ContractJson.Options)
                     ?? throw new JsonException("no pages");
             }
@@ -83,7 +88,7 @@ public sealed class IdentifySheetsHandler(SheetIdentification identification) : 
 
     public async Task<string> RunAsync(TaskContext context, CancellationToken cancellationToken)
     {
-        await identification.RecordMissingAsync(context, cancellationToken);
+        await identification.RecordMissingAsync(context, cancellationToken, context.Task.Producer.Key());
         return JsonSerializer.Serialize(new TaskResultManifest
         {
             ContractVersion = ContractInfo.Version, TaskType = context.Task.TaskType, TaskPublicId = context.Task.TaskPublicId.ToString("D"),

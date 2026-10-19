@@ -36,15 +36,16 @@ public static class EvalHarness
     }
 
     public static async Task<int> CreateGoldSetAsync(
-        SqlConnection connection, string name, GoldRole role, IReadOnlyList<GoldItem> items, CancellationToken cancellationToken = default)
+        SqlConnection connection, string name, GoldRole role, IReadOnlyList<GoldItem> items, CancellationToken cancellationToken = default, string? notes = null)
     {
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
             await using var create = connection.CreateCommand();
             create.Transaction = transaction;
-            create.CommandText = "INSERT INTO ductwork.GoldSet (Name, Role) VALUES (@n, @r); SELECT CAST(SCOPE_IDENTITY() AS INT);";
+            create.CommandText = "INSERT INTO ductwork.GoldSet (Name, Role, Notes) VALUES (@n, @r, @notes); SELECT CAST(SCOPE_IDENTITY() AS INT);";
             create.Parameters.AddWithValue("@n", name);
+            create.Parameters.AddWithValue("@notes", (object?)notes ?? DBNull.Value);
             create.Parameters.AddWithValue("@r", role.ToString());
             var id = (int)(await create.ExecuteScalarAsync(cancellationToken))!;
 
@@ -114,7 +115,8 @@ public static class EvalHarness
         int goldSetId,
         IDetector detector,
         MatchMode mode,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? notes = null)
     {
         await EnsureHoldoutAvailableAsync(connection, goldSetId, cancellationToken);
         var gold = await LoadGoldAsync(connection, goldSetId, cancellationToken);
@@ -133,8 +135,8 @@ public static class EvalHarness
                 // No OUTPUT clause: SQL Server refuses it on a table with an enabled trigger (the holdout guard).
                 insert.CommandText =
                     """
-                    INSERT INTO ductwork.EvalRun (GoldSetId, ProducerId, TaskKey, Family, MatchMode, ContractVersion, FinishedUtc)
-                    VALUES (@g, @p, @t, @f, @m, @v, SYSUTCDATETIME());
+                    INSERT INTO ductwork.EvalRun (GoldSetId, ProducerId, TaskKey, Family, MatchMode, ContractVersion, Notes, FinishedUtc)
+                    VALUES (@g, @p, @t, @f, @m, @v, @notes, SYSUTCDATETIME());
                     SELECT CAST(SCOPE_IDENTITY() AS INT);
                     """;
                 insert.Parameters.AddWithValue("@g", goldSetId);
@@ -143,10 +145,12 @@ public static class EvalHarness
                 insert.Parameters.AddWithValue("@f", detector.Family.ToString());
                 insert.Parameters.AddWithValue("@m", mode.ToString());
                 insert.Parameters.AddWithValue("@v", ContractInfo.Version);
+                insert.Parameters.AddWithValue("@notes", (object?)notes ?? DBNull.Value);
                 runId = (int)(await insert.ExecuteScalarAsync(cancellationToken))!;
             }
 
-            foreach (var row in outcome.Score.ByType.Concat(outcome.Score.ByBuildingType).Prepend(outcome.Score.Overall))
+            // Items with no building type roll up to a (null, null) row that repeats the overall one; "by building" means nothing without a building.
+            foreach (var row in outcome.Score.ByType.Concat(outcome.Score.ByBuildingType.Where(b => b.BuildingType is not null)).Prepend(outcome.Score.Overall))
             {
                 await using var insertResult = connection.CreateCommand();
                 insertResult.Transaction = transaction;
