@@ -21,6 +21,8 @@ builder.Services.AddHttpClient<IDuctworkApi, DuctworkApiClient>((sp, http) =>
 });
 
 builder.Services.AddSingleton<IProcessRunner, ChildProcessRunner>();
+builder.Services.AddSingleton<SheetIdentification>();
+builder.Services.AddSingleton<ITaskHandler, IdentifySheetsHandler>();
 builder.Services.AddSingleton<ITaskHandler, ResidentialLabelsHandler>();
 if (configured.EnableFakeHandler) builder.Services.AddSingleton<ITaskHandler, FakeDetectHandler>();
 builder.Services.AddSingleton<HandlerRegistry>();

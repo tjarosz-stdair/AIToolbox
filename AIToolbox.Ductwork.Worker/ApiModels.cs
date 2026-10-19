@@ -28,7 +28,7 @@ public sealed record InputView(Guid ViewId, string Title, long? BuildingTypeId, 
 
 public sealed record InputSheet(
     Guid SheetId, Guid FileId, int PageNo, string? SheetNumber, string? Title, string Kind, bool InScope, double WidthPts, double HeightPts, int Rotation,
-    Guid? DuplicateOf, IReadOnlyList<InputView> Views);
+    Guid? DuplicateOf, IReadOnlyList<InputView> Views, string? Discipline = null);
 
 public sealed record InputBuildingType(long BuildingTypeId, string Name);
 

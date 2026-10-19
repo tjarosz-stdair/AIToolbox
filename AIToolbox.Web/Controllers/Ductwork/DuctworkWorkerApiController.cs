@@ -128,7 +128,7 @@ public sealed class DuctworkWorkerApiController(
             files = files.Select(f => new { fileId = f.PublicId, fileName = f.OriginalName, bytes = f.Bytes, sha256 = f.Sha256, revision = f.RevisionNo, duplicateOf = f.DuplicateOfPublicId }),
             sheets = recorded.Select(s => new
             {
-                sheetId = s.PublicId, fileId = s.SourceFilePublicId, pageNo = s.PageNo, sheetNumber = s.SheetNumber, title = s.Title, kind = s.Kind, inScope = s.InScope,
+                sheetId = s.PublicId, fileId = s.SourceFilePublicId, pageNo = s.PageNo, sheetNumber = s.SheetNumber, title = s.Title, kind = s.Kind, discipline = s.Discipline, inScope = s.InScope,
                 widthPts = s.WidthPts, heightPts = s.HeightPts, rotation = s.Rotation, duplicateOf = s.DuplicateOfPublicId,
                 views = s.Views.Select(v => new { viewId = v.PublicId, title = v.Title, buildingTypeId = v.BuildingTypeId, scaleRatio = v.ScaleRatio })
             }),

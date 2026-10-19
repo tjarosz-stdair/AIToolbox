@@ -392,7 +392,7 @@ public sealed class ResidentialHandlerTests : IDisposable
         var error = await Assert.ThrowsAsync<TaskFailedException>(() => Handler(new FakeRunner(_ => new ProcessResult(0, "", ""))).RunAsync(context, default));
 
         Assert.False(error.Retryable);
-        Assert.Contains("no in-scope plan sheets", error.Message);
+        Assert.Contains("no in-scope mechanical plan sheets", error.Message);
     }
 
     [Fact]

@@ -54,4 +54,7 @@ public sealed class SidecarOptions
     public string Directory { get; set; } = "";
 
     public int PageTimeoutMinutes { get; set; } = 10;
+
+    /// <summary>Read the title block of a page that has no text layer by OCR (needs the sidecar's ocr extra). Slower, and only used for such pages.</summary>
+    public bool ReadTextLessTitleBlocks { get; set; } = true;
 }

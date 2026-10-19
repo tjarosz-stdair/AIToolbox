@@ -198,6 +198,10 @@ public sealed class SheetRepository
         });
     }
 
+    /// <summary>A page with no discipline named is kept in scope; one named as anything but mechanical is left out.</summary>
+    internal static bool IsCountableDiscipline(string? discipline) =>
+        string.IsNullOrWhiteSpace(discipline) || discipline.Trim().StartsWith("Mech", StringComparison.OrdinalIgnoreCase) || discipline.Trim().Equals("HVAC", StringComparison.OrdinalIgnoreCase);
+
     private static async Task<IReadOnlyList<SheetRecord>> RegisterCoreAsync(JobTxn t, Guid sourceFilePublicId, IReadOnlyList<NewSheet> sheets, long? taskId)
     {
         t.RequireEditable();
@@ -244,8 +248,9 @@ public sealed class SheetRepository
                 ("@j", t.Job.JobId), ("@r", file.RevisionId), ("@f", file.SourceFileId), ("@p", s.PageNo), ("@num", Clean(s.SheetNumber, 40)), ("@title", Clean(s.Title, 200)),
                 ("@disc", Clean(s.Discipline, 20)), ("@kind", s.Kind.ToString()), ("@h", (object?)hash ?? System.Data.SqlTypes.SqlBinary.Null), ("@dup", duplicateOf),
                 ("@text", s.HasTextLayer), ("@w", s.WidthPts), ("@ht", s.HeightPts), ("@rot", s.Rotation),
-                // A page the job already holds is left out of scope, so it is read once. A person can bring it back.
-                ("@scope", duplicateOf is null), ("@task", taskId), ("@by", by));
+                // A page the job already holds is left out of scope, so it is read once, and so is a page that is plainly another discipline
+                // (electrical, plumbing, architectural), because only mechanical sheets are counted. A person can bring either back.
+                ("@scope", duplicateOf is null && IsCountableDiscipline(s.Discipline)), ("@task", taskId), ("@by", by));
         }
 
         await t.AuditAtCurrentVersionAsync(new AuditEntry("sheets", "sheets.registered",

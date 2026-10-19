@@ -50,8 +50,17 @@ internal sealed class FakeApi : IDuctworkApi
     public async Task DownloadFileAsync(long taskId, Guid fileId, Stream destination, CancellationToken ct) =>
         await destination.WriteAsync(Files[fileId], ct);
 
-    public Task<RegisterSheetsReply> RegisterSheetsAsync(long taskId, Guid fileId, IReadOnlyList<PageReport> pages, CancellationToken ct) =>
-        Task.FromResult(new RegisterSheetsReply(pages.Count, 0));
+    public List<(Guid FileId, IReadOnlyList<PageReport> Pages)> Registered { get; } = [];
+
+    /// <summary>Lets a test make the server's view of the job change when sheets are recorded, as the real one does.</summary>
+    public Action<Guid, IReadOnlyList<PageReport>>? OnRegisterSheets { get; set; }
+
+    public Task<RegisterSheetsReply> RegisterSheetsAsync(long taskId, Guid fileId, IReadOnlyList<PageReport> pages, CancellationToken ct)
+    {
+        Registered.Add((fileId, pages));
+        OnRegisterSheets?.Invoke(fileId, pages);
+        return Task.FromResult(new RegisterSheetsReply(pages.Count, 0));
+    }
 
     public Func<IReadOnlyList<VisionImage>, VisionReply>? OnVision { get; set; }
 

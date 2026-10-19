@@ -41,7 +41,7 @@ public sealed class FakeDetectHandler : ITaskHandler
 /// Counts labeled terminals, fans, grilles and flag-note items on residential unit plans by running the Python sidecar once
 /// per in-scope plan sheet, each in a child process that is given one PDF and one output path and nothing else.
 /// </summary>
-public sealed class ResidentialLabelsHandler(IProcessRunner runner, IOptions<WorkerOptions> options) : ITaskHandler
+public sealed class ResidentialLabelsHandler(IProcessRunner runner, IOptions<WorkerOptions> options, SheetIdentification? identification = null) : ITaskHandler
 {
     public string TaskType => "detect-residential-labels";
 
@@ -52,10 +52,21 @@ public sealed class ResidentialLabelsHandler(IProcessRunner runner, IOptions<Wor
             throw new TaskFailedException("The worker has no Sidecar:Directory configured, so it cannot run the residential detector.", retryable: false);
 
         var input = await context.GetInputAsync(cancellationToken);
-        var sheets = input.Sheets.Where(s => s.InScope && s.DuplicateOf is null && string.Equals(s.Kind, "Plan", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.FileId).ThenBy(s => s.PageNo).ToList();
+        var sheets = PlanSheets(input);
+
+        // A job whose drawings have never been read has no sheets yet. Reading them is part of this task, so a person does not have to
+        // record the pages by hand first; a job that already has sheets (someone recorded or corrected them) is taken as it is.
+        if (sheets.Count == 0 && input.Sheets.Count == 0 && identification is { IsAvailable: true })
+        {
+            await identification.RecordMissingAsync(context, cancellationToken);
+            input = await context.RefreshInputAsync(cancellationToken);
+            sheets = PlanSheets(input);
+        }
+
         if (sheets.Count == 0)
-            throw new TaskFailedException("This job has no in-scope plan sheets recorded. Record the sheets first, then run the detector.", retryable: false);
+            throw new TaskFailedException(input.Sheets.Count == 0
+                ? "This job has no sheets recorded. Record the sheets first, then run the detector."
+                : "This job has no in-scope mechanical plan sheets. Check the sheets' kind, discipline and scope on the Drawings tab.", retryable: false);
 
         var files = input.Files.ToDictionary(f => f.FileId);
         var buildingNames = input.BuildingTypes.ToDictionary(b => b.BuildingTypeId, b => b.Name);
@@ -121,6 +132,12 @@ public sealed class ResidentialLabelsHandler(IProcessRunner runner, IOptions<Wor
             Producer = context.Task.Producer, Detections = detections, Findings = findings
         }, ContractJson.Options);
     }
+
+    /// <summary>Mechanical plans only, in scope, each distinct sheet once. A sheet with no discipline recorded is given the benefit of the doubt.</summary>
+    private static List<InputSheet> PlanSheets(TaskInput input) =>
+        input.Sheets.Where(s => s.InScope && s.DuplicateOf is null && string.Equals(s.Kind, "Plan", StringComparison.OrdinalIgnoreCase)
+                                && (string.IsNullOrEmpty(s.Discipline) || string.Equals(s.Discipline, "Mechanical", StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(s => s.FileId).ThenBy(s => s.PageNo).ToList();
 
     private static string Tail(string text)
     {

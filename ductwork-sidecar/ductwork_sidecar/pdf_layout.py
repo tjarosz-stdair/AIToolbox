@@ -172,3 +172,87 @@ def _find_border(boxes: Iterable[Box], page_area: float) -> Box | None:
         if best is None or box.area > best.area:
             best = box
     return best
+
+
+# ---------------------------------------------------------------------------------------------------
+# Sheet facts: what is needed to say which sheet a page is, and whether it has been seen before.
+
+
+@dataclass(frozen=True)
+class Span:
+    """A run of text in one font and size, with its box in canonical space."""
+
+    text: str
+    box: Box
+    size: float
+    vertical: bool = False
+
+
+@dataclass
+class SheetFacts:
+    page_no: int          # 1-based, as a person counts pages
+    width: float
+    height: float
+    rotation: int
+    spans: list[Span]
+    has_text: bool
+    content_hash: str     # SHA-256 hex of the drawing area (the title-block strip is left out)
+
+
+# The title block sits in a strip at one edge of the sheet. Re-issuing the same drawing under another project
+# name, number or date changes that strip and nothing else, so it is left out of the content hash.
+TITLE_STRIP_FROM = 0.88
+
+
+def load_sheet_facts(path: str, pages: Iterable[int] | None = None) -> list[SheetFacts]:
+    """Facts for the given 0-based pages (all by default), reading the file once."""
+    import pymupdf
+
+    result: list[SheetFacts] = []
+    with pymupdf.open(path) as doc:
+        for index in (range(len(doc)) if pages is None else pages):
+            result.append(_facts_from_page(doc[index], index + 1, pymupdf))
+    return result
+
+
+def _facts_from_page(page, page_no: int, pymupdf) -> SheetFacts:
+    import hashlib
+
+    matrix = page.rotation_matrix
+    width, height = page.rect.width, page.rect.height
+
+    def to_box(rect) -> Box:
+        r = pymupdf.Rect(rect) * matrix
+        r.normalize()
+        return Box(r.x0, r.y0, r.x1, r.y1)
+
+    spans: list[Span] = []
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for s in line["spans"]:
+                text = " ".join(s["text"].split())
+                if not text:
+                    continue
+                box = to_box(s["bbox"])
+                spans.append(Span(text, box, float(s["size"]), vertical=box.height > 2.5 * max(box.width, 1.0) and len(text) > 2))
+
+    digest = hashlib.sha256()
+    strip = width * TITLE_STRIP_FROM
+    words = sorted(
+        (round(b.x0), round(b.y0), w[4]) for w in page.get_text("words") for b in [to_box(w[:4])] if b.cx <= strip
+    )
+    for x, y, text in words:
+        digest.update(f"W|{x}|{y}|{text}\n".encode("utf-8"))
+
+    shapes = []
+    for d in page.get_drawings():
+        b = to_box(d["rect"])
+        if b.cx > strip:
+            continue
+        fill = d.get("fill")
+        shapes.append((round(b.x0), round(b.y0), round(b.x1), round(b.y1), len(d["items"]), tuple(round(c, 2) for c in fill) if fill else ()))
+    shapes.sort()
+    for s in shapes:
+        digest.update(f"D|{s}\n".encode("utf-8"))
+
+    return SheetFacts(page_no, width, height, page.rotation, spans, bool(words), digest.hexdigest())

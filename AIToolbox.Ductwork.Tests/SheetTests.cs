@@ -59,6 +59,20 @@ public sealed class SheetTests(SqlFixture db) : IClassFixture<SqlFixture>, IDisp
         return await uploads.CompleteAsync(session.PublicId, token, Ctx(Editor));
     }
 
+    [Fact]
+    public async Task A_page_that_is_plainly_another_discipline_is_recorded_out_of_scope_and_can_be_brought_back()
+    {
+        var s = await JobWithFileAsync();
+
+        var sheets = await Sheets.RegisterAsync(s.Job.JobId, s.File.PublicId,
+            [Page(1) with { Discipline = "Electrical" }, Page(2) with { Discipline = "Mechanical" }, Page(3) with { Discipline = null }, Page(4) with { Discipline = "Plumbing" }, Page(5) with { Discipline = "HVAC" }],
+            s.Token, Ctx(Editor));
+
+        Assert.Equal([false, true, true, false, true], sheets.OrderBy(x => x.PageNo).Select(x => x.InScope));
+        var back = await Sheets.UpdateSheetAsync(sheets.Single(x => x.PageNo == 1).SheetId, new SheetEdit { InScope = true }, s.Token, Ctx(Editor));
+        Assert.True(back.InScope);
+    }
+
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     private static NewSheet Page(int no, string? hash = null, string? number = null) => new()

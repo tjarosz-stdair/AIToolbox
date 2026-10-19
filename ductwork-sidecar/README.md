@@ -19,6 +19,12 @@ pass-through flag" is reported as drawn, with a finding, and a rule (resolved by
 | `notes.py` | Parses a flag-notes column into `{number: text}`. |
 | `residential.py` | Family C detector: label and flag-note counting for residential unit plans. |
 | `manifest.py` | Builds the contract-shaped manifest. |
+| `sheet_id.py` | Says which sheet a page is: number, title, discipline, kind. Works in canonical space, so rotated sheets read like upright ones. |
+| `sheet_ocr.py` | The same for a text-less page, by reading only its title-block strip with local OCR. Optional `ocr` extra. |
+
+## Commands
+
+`python -m ductwork_sidecar residential <pdf> --page N --out manifest.json` counts a plan sheet. `python -m ductwork_sidecar sheets <pdf> [--ocr] --out pages.json` identifies every page of a file and hashes its drawing area, in the shape the server's sheet registration takes.
 
 ## Tools
 

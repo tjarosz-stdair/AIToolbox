@@ -1,4 +1,5 @@
-"""Command line entry: ``python -m ductwork_sidecar residential <pdf> [--building NAME] [--page N] --out manifest.json``.
+"""Command line entry: ``python -m ductwork_sidecar residential <pdf> [--building NAME] [--page N] --out manifest.json``
+and ``python -m ductwork_sidecar sheets <pdf> [--ocr] --out pages.json``.
 
 The C# worker runs this as a subprocess. It reads the PDF it is given and writes one manifest. It
 never touches the network, a database or any path other than the two it is handed.
@@ -13,6 +14,7 @@ import sys
 from .manifest import build_manifest
 from .pdf_layout import load_page_layout
 from .residential import detect
+from .sheet_id import identify, to_page_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,7 +27,14 @@ def main(argv: list[str] | None = None) -> int:
     res.add_argument("--sheet-ref", default=None)
     res.add_argument("--task-id", default="local")
     res.add_argument("--out", required=True)
+    sheets = sub.add_parser("sheets", help="identify every page of a file: sheet number, title, discipline, kind and content hash")
+    sheets.add_argument("pdf")
+    sheets.add_argument("--ocr", action="store_true", help="read the title block of text-less pages by OCR (slower; needs the ocr extra)")
+    sheets.add_argument("--out", required=True)
     args = parser.parse_args(argv)
+
+    if args.command == "sheets":
+        return _sheets(args)
 
     layout = load_page_layout(args.pdf, args.page)
     result = detect(layout, building_type=args.building, sheet_ref=args.sheet_ref)
@@ -33,6 +42,32 @@ def main(argv: list[str] | None = None) -> int:
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     print(json.dumps({"detections": len(result.detections), "findings": len(result.findings), **result.diagnostics}), file=sys.stderr)
+    return 0
+
+
+def _sheets(args) -> int:
+    from .pdf_layout import load_sheet_facts
+
+    engine = None
+    pages = []
+    for facts in load_sheet_facts(args.pdf):
+        identity = identify(facts)
+        if not facts.has_text and args.ocr:
+            try:
+                from .ocr_layout import rapidocr_engine
+                from .sheet_ocr import identify_text_less
+
+                engine = engine or rapidocr_engine()
+            except ImportError:
+                # Without the OCR extra a text-less page stays unidentified, and the page says why, instead of the whole file failing.
+                print("OCR is not installed; text-less pages are left unidentified.", file=sys.stderr)
+            else:
+                identity = identify_text_less(args.pdf, facts.page_no - 1, engine)
+        pages.append(to_page_report(facts, identity))
+
+    with open(args.out, "w", encoding="utf-8") as f:
+        json.dump({"pages": pages}, f, indent=2)
+    print(json.dumps({"pages": len(pages), "textLess": sum(1 for p in pages if not p["hasTextLayer"])}), file=sys.stderr)
     return 0
 
 

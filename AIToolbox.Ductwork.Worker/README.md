@@ -59,3 +59,7 @@ the worker is upgraded before the server).
 Scratch-folder size limits, per-task memory caps (a Windows job object around the child), the symbol and geometry
 detector handlers, hosted-vision calls (those go through the server's gateway, never from here), and the central worker's
 instance registry and per-instance key provisioning screen.
+
+## Reading the sheets
+
+Before a detector can count anything it needs to know which pages are mechanical plans. The worker reads each drawing file's title blocks with the sidecar (`sheets` command) and records the pages with the server; the `detect-residential-labels` task does this itself when a job has no sheets yet, and `identify-sheets` is available as a task type of its own. Pages with no text layer are read by OCR when `Worker:Sidecar:ReadTextLessTitleBlocks` is on (the default) and the sidecar's `ocr` extra is installed; otherwise they are left unidentified. Only mechanical sheets are counted.

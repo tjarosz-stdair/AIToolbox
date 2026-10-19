@@ -48,8 +48,10 @@ public sealed class TaskContext
 
     public void ReportProgress(int done, int? total = null, string? message = null) => Progress = (done, total, message);
 
-    /// <summary>What the task is about. Asked once per task.</summary>
+    /// <summary>What the task is about. Asked once per task, and again after the task changes it (by recording sheets).</summary>
     public async Task<TaskInput> GetInputAsync(CancellationToken ct) => _input ??= await Api.GetInputAsync(Task.TaskId, ct);
+
+    public async Task<TaskInput> RefreshInputAsync(CancellationToken ct) => _input = await Api.GetInputAsync(Task.TaskId, ct);
 
     /// <summary>
     /// Downloads a drawing file into the scratch folder and checks it against the hash the server holds, so a damaged or
