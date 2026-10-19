@@ -208,18 +208,21 @@ TITLE_STRIP_FROM = 0.88
 MAX_INK_POINTS = 40000
 
 
-def load_sheet_facts(path: str, pages: Iterable[int] | None = None) -> list[SheetFacts]:
-    """Facts for the given 0-based pages (all by default), reading the file once."""
+def load_sheet_facts(path: str, pages: Iterable[int] | None = None, text_only: bool = False) -> list[SheetFacts]:
+    """Facts for the given 0-based pages (all by default), reading the file once.
+
+    ``text_only`` skips the line-work (and so the content hash and ink points), which is most of the time on a large sheet;
+    it is for readers that need only the text, such as the schedule reader."""
     import pymupdf
 
     result: list[SheetFacts] = []
     with pymupdf.open(path) as doc:
         for index in (range(len(doc)) if pages is None else pages):
-            result.append(_facts_from_page(doc[index], index + 1, pymupdf))
+            result.append(_facts_from_page(doc[index], index + 1, pymupdf, text_only))
     return result
 
 
-def _facts_from_page(page, page_no: int, pymupdf) -> SheetFacts:
+def _facts_from_page(page, page_no: int, pymupdf, text_only: bool = False) -> SheetFacts:
     import hashlib
 
     matrix = page.rotation_matrix
@@ -239,6 +242,9 @@ def _facts_from_page(page, page_no: int, pymupdf) -> SheetFacts:
                     continue
                 box = to_box(s["bbox"])
                 spans.append(Span(text, box, float(s["size"]), vertical=box.height > 2.5 * max(box.width, 1.0) and len(text) > 2))
+
+    if text_only:
+        return SheetFacts(page_no, width, height, page.rotation, spans, bool(spans), "", [])
 
     digest = hashlib.sha256()
     strip = width * TITLE_STRIP_FROM

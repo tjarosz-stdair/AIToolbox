@@ -91,6 +91,18 @@
               "null"
             ]
           },
+          "manufacturer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "quantity": {
             "type": "number"
           },

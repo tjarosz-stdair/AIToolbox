@@ -24,6 +24,7 @@ builder.Services.AddSingleton<IProcessRunner, ChildProcessRunner>();
 builder.Services.AddSingleton<SheetIdentification>();
 builder.Services.AddSingleton<ITaskHandler, IdentifySheetsHandler>();
 builder.Services.AddSingleton<ITaskHandler, ResidentialLabelsHandler>();
+builder.Services.AddSingleton<ITaskHandler, ReadSchedulesHandler>();
 if (configured.EnableFakeHandler) builder.Services.AddSingleton<ITaskHandler, FakeDetectHandler>();
 builder.Services.AddSingleton<HandlerRegistry>();
 builder.Services.AddHostedService<WorkerService>();

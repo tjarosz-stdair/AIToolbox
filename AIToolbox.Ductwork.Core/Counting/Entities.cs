@@ -275,7 +275,7 @@ public sealed class TaskResultIngestor
                     : byName[BuildingTypeRepository.Normalize(d.BuildingType).Normalized];
 
                 rows.Rows.Add(t.Job.JobId, (object?)buildingTypeId ?? DBNull.Value, provenance.ProducerId, provenance.ProcessingTaskId,
-                    d.DetectionId, d.Type.Trim(), Nz(d.Category), Nz(d.Tag), Nz(d.Size), (decimal)d.Quantity, d.Unit.ToString(), d.Method.ToString(),
+                    d.DetectionId, d.Type.Trim(), Nz(d.Category), Nz(d.Tag), Nz(d.Size), Nz(d.Manufacturer), Nz(d.Model), (decimal)d.Quantity, d.Unit.ToString(), d.Method.ToString(),
                     d.Family.ToString(), d.Confidence, decision.Surface.ToString(), t.Job.ReviewLevel.ToString(), disposition.ToString(),
                     Nz(d.SheetViewRef), (object?)d.Box?.X0 ?? DBNull.Value, (object?)d.Box?.Y0 ?? DBNull.Value,
                     (object?)d.Box?.X1 ?? DBNull.Value, (object?)d.Box?.Y1 ?? DBNull.Value, Nz(d.Evidence));
@@ -347,6 +347,8 @@ public sealed class TaskResultIngestor
             Length(problems, d.Category, MaxText, "category", d.DetectionId);
             Length(problems, d.Tag, MaxText, "tag", d.DetectionId);
             Length(problems, d.Size, MaxText, "size", d.DetectionId);
+            Length(problems, d.Manufacturer, MaxText, "manufacturer", d.DetectionId);
+            Length(problems, d.Model, MaxText, "model", d.DetectionId);
             Length(problems, d.BuildingType, MaxText, "building type", d.DetectionId);
             Length(problems, d.SheetViewRef, 200, "sheet view", d.DetectionId);
             Length(problems, d.Evidence, MaxEvidence, "evidence", d.DetectionId);
@@ -385,7 +387,7 @@ public sealed class TaskResultIngestor
     private static readonly (string Name, Type Type)[] EntityColumns =
     [
         ("JobId", typeof(long)), ("BuildingTypeId", typeof(long)), ("ProducerId", typeof(long)), ("ProcessingTaskId", typeof(long)),
-        ("DetectionId", typeof(string)), ("Type", typeof(string)), ("Category", typeof(string)), ("Tag", typeof(string)), ("Size", typeof(string)),
+        ("DetectionId", typeof(string)), ("Type", typeof(string)), ("Category", typeof(string)), ("Tag", typeof(string)), ("Size", typeof(string)), ("Manufacturer", typeof(string)), ("Model", typeof(string)),
         ("Quantity", typeof(decimal)), ("Unit", typeof(string)), ("Method", typeof(string)), ("Family", typeof(string)), ("Confidence", typeof(double)),
         ("SurfacedAs", typeof(string)), ("ReviewLevelAtCreation", typeof(string)), ("Disposition", typeof(string)),
         ("SheetViewRef", typeof(string)), ("BoxX0", typeof(double)), ("BoxY0", typeof(double)), ("BoxX1", typeof(double)), ("BoxY1", typeof(double)),

@@ -21,13 +21,18 @@ pass-through flag" is reported as drawn, with a finding, and a rule (resolved by
 | `manifest.py` | Builds the contract-shaped manifest. |
 | `sheet_id.py` | Says which sheet a page is: number, title, discipline, kind. Works in canonical space, so rotated sheets read like upright ones. |
 | `views.py` | Finds the views on a sheet from its scale labels: title, number, scale ratio and area. |
+| `schedules.py` | Family A: reads equipment schedules from the page's text and counts each scheduled mark on the plan sheets. |
 | `sheet_ocr.py` | The same for a text-less page, by reading only its title-block strip with local OCR. Optional `ocr` extra. |
 
 ## Commands
 
 `python -m ductwork_sidecar residential <pdf> --page N --out manifest.json` counts a plan sheet. `python -m ductwork_sidecar sheets <pdf> [--ocr] --out pages.json` identifies every page of a file, hashes its drawing area, and finds the views on each mechanical page, in the shape the server's sheet registration takes.
 
+`python -m ductwork_sidecar schedules <pdf> --spec spec.json --out out.json` reads the schedules on the pages in the spec, and `marks` counts the scheduled marks on the plan pages in the spec.
+
 ## Tools
+
+`tools/schedule_parity.py PLAN.pdf EVIDENCE.json` checks the schedule reader against an audited reference, mark by mark.
 
 `tools/engine_parity.py` runs the wrapped commercial engine on a reference plan set and compares its
 summary with an audited reference workbook, line by line (exit code 0 means identical). It is the

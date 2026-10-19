@@ -67,6 +67,26 @@ public class ResultIngestionTests(SqlFixture db) : IClassFixture<SqlFixture>
     private async Task<int> CountAsync(string table, long jobId) =>
         await db.ScalarAsync<int>($"SELECT COUNT(*) FROM ductwork.{table} WHERE JobId = @j;", ("@j", jobId));
 
+    // ---- what a schedule row carries
+
+    [Fact]
+    public async Task A_proposal_from_a_schedule_row_is_stored_with_its_manufacturer_and_model_and_one_that_is_too_long_is_refused()
+    {
+        var s = await RunningTaskAsync();
+        var ok = Detection("sch-EF-1-M1.2", type: "EXHAUST FAN", tag: "EF-1") with { Manufacturer = "PANASONIC", Model = "FV-0510VS1", Method = DetectionMethod.Schedule, Family = DetectorFamily.ScheduleNote };
+
+        var result = await Ingestor().SubmitAsync(s.Task.ProcessingTaskId, Worker(), Manifest(s, [ok]), null);
+
+        Assert.True(result.Accepted);
+        var entity = Assert.Single(await new EntityRepository(db.ConnectionString).ListByJobAsync(s.Job.JobId));
+        Assert.Equal(("PANASONIC", "FV-0510VS1", "EF-1", DetectionMethod.Schedule), (entity.Manufacturer, entity.Model, entity.Tag, entity.Method));
+
+        var t = await RunningTaskAsync();
+        var tooLong = await Assert.ThrowsAsync<ResultRejectedException>(() =>
+            Ingestor().SubmitAsync(t.Task.ProcessingTaskId, Worker(), Manifest(t, [Detection("d1") with { Model = new string('x', 101) }]), null));
+        Assert.Contains(tooLong.Reasons, r => r.Contains("model"));
+    }
+
     // ---- the happy path
 
     [Fact]

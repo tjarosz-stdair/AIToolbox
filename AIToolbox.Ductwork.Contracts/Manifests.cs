@@ -32,6 +32,9 @@ public sealed record DetectionProposal
     public string? Category { get; init; }
     public string? Tag { get; init; }
     public string? Size { get; init; }
+    /// <summary>Only where the drawing names them (a schedule row); never inferred.</summary>
+    public string? Manufacturer { get; init; }
+    public string? Model { get; init; }
     public required double Quantity { get; init; }
     public QuantityUnit Unit { get; init; } = QuantityUnit.EA;
     public required DetectionMethod Method { get; init; }
