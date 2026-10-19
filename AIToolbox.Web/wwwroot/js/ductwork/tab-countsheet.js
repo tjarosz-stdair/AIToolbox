@@ -2,7 +2,7 @@
 // never typed in, so what is shown here, in the CSV and on paper cannot disagree. A quantity that cannot be known yet is
 // shown as "to be determined", never as zero, and the page says in plain words what is holding it up.
 
-import { h, clear, badge, titleCase, fmtQty, toCsv, download, toast } from "./util.js";
+import { h, clear, badge, titleCase, fmtQty, fmtBytes, fmtDate, toCsv, download, toast } from "./util.js";
 import { countSheetBlockers } from "./model.js";
 
 const STATE_TEXT = {
@@ -14,10 +14,10 @@ const STATE_TEXT = {
 
 export async function render(container, ctx) {
   const paint = async () => {
-    const sheet = await ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/count-sheet`));
+    const [sheet, reports] = await Promise.all([ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/count-sheet`)), ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/reports`))]);
     clear(container);
     if (!sheet) { container.append(h("div", { class: "alert alert-danger" }, "The count sheet could not be built.")); return; }
-    container.append(view(ctx, sheet, paint));
+    container.append(view(ctx, sheet, paint), issuedReports(ctx, reports || []));
   };
 
   await paint();
@@ -35,6 +35,7 @@ function view(ctx, sheet, repaint) {
       h("h2", { class: "mb-0" }, "Count sheet"),
       h("div", { class: "d-flex gap-2 dw-noprint" },
         h("button", { class: "btn btn-outline-secondary btn-sm", type: "button", onclick: repaint }, "Refresh"),
+        h("a", { class: "btn btn-outline-secondary btn-sm", href: ctx.api.url(`/jobs/${ctx.jobId}/reports/draft/xlsx`), title: "A draft of the count sheet as it is now, as an Excel file" }, "Download Excel"),
         h("button", { class: "btn btn-outline-secondary btn-sm", type: "button", onclick: () => { download(`count-sheet-${ctx.jobId}.csv`, csv(ctx, sheet)); toast("Downloaded.", "success", 2000); } }, "Download CSV"),
         h("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => window.print() }, "Print"))),
     h("p", { class: "text-muted small" }, "Extended quantity is the count in one building times how many buildings there are. Items are only added together when they are the same item in the same unit."),
@@ -43,6 +44,21 @@ function view(ctx, sheet, repaint) {
     sheet.blocks.map((b) => block(b)),
     totals(sheet),
     sheet.openItems?.length ? openItems(sheet) : null);
+}
+
+/** The reports made when the job was completed. They are the record of what was issued: they never change, and each says whether it was final. */
+function issuedReports(ctx, reports) {
+  if (!reports.length) {
+    return h("div", { class: "dw-card dw-noprint" }, h("h3", {}, "Issued reports"), h("p", { class: "text-muted small mb-0" }, "Nothing has been issued yet. Excel and web page versions are made and kept when the job is completed. “Download Excel” above is a draft of the sheet as it is now."));
+  }
+
+  return h("div", { class: "dw-card dw-noprint" }, h("h3", {}, "Issued reports"),
+    h("table", { class: "table table-sm align-middle mb-0" },
+      h("thead", {}, h("tr", {}, ["File", "Version", "Final", "Made", "Size", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, reports.map((r) => h("tr", {},
+        h("td", {}, r.fileName), h("td", {}, r.completionVersion), h("td", {}, r.isFinal ? badge("final", "success") : badge("not final", "warning")),
+        h("td", { class: "small" }, `${fmtDate(r.generatedUtc)} by ${r.generatedBy}`), h("td", { class: "small" }, fmtBytes(r.bytes)),
+        h("td", { class: "text-end" }, h("a", { class: "btn btn-outline-primary btn-sm", href: ctx.api.url(`/jobs/${ctx.jobId}/reports/${r.reportId}/download`) }, "Download")))))));
 }
 
 function block(b) {

@@ -168,6 +168,7 @@ export function startServer(state = createState()) {
       if (route === "/vision/policy") return json(res, 200, { enabled: true, noticeText: "Drawing content leaves this server.", noticeVersion: 2, approverRule: "EditPermission", requireReason: true, maxPagesPerApproval: 10, maxImagesPerPage: 6, approvalLifetimeMinutes: 60, providers: [{ providerId: 7, name: "Foundry Vision", model: "vision-1", governanceRoute: "Microsoft Foundry" }] });
       if (route === "/task-types") return json(res, 200, [{ taskType: "detect-residential-labels", sendsDrawingContent: false, maxAttempts: 3 }, { taskType: "classify-crops", sendsDrawingContent: true, maxAttempts: 2 }]);
       if ((r = m(/^\/jobs\/1\/entities\/([^/]+)\/history$/))) return json(res, 200, [{ entityRevisionId: 1, entityId: 3, revisionNo: 2, action: "Reviewed", changedBy: "owner@example.com", changedUtc: "2026-10-16T12:00:00Z", reason: null, beforeJson: "{}", afterJson: "{}", undoOfRevisionNo: null }]);
+      if (route === "/jobs/1/reports") return json(res, 200, [{ reportId: "11111111-1111-1111-1111-111111111111", completionVersion: 1, format: "xlsx", fileName: "count-sheet-1-v1-20261016.xlsx", bytes: 8192, isFinal: true, generatedBy: "owner@example.com", generatedUtc: "2026-10-16T12:00:00Z", sha256: "ab" }]);
       if (route === "/jobs/1/count-sheet") {
         return json(res, 200, {
           jobId: 1, isFinal: false, unconfirmedBuildingTypes: ["Type 5"], openFindings: [{ findingId: "fi1", kind: "GrammarVariant", question: "A boot labelled 4x12: is the depth 7?", item: "Boot 4x12x7" }],

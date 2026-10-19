@@ -11,6 +11,7 @@ using AIToolbox.Web.Models;
 using AIToolbox.Web.Services;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Jobs;
+using AIToolbox.Ductwork.Core.Reports;
 using AIToolbox.Ductwork.Core.Tasks;
 using AIToolbox.Web.Controllers.Ductwork;
 using AIToolbox.Web.Ductwork;
@@ -146,9 +147,15 @@ public sealed class ApiHarness(DuctworkDatabase db)
         return controller;
     }
 
-    public DuctworkJobsController JobsApi(string email, string? tab = null, long? fencing = null, bool admin = false) =>
+    public DuctworkJobsController JobsApi(string email, string? tab = null, long? fencing = null, bool admin = false, ReportService? reports = null) =>
         With(new DuctworkJobsController(JobRepo, LockService, TaskRepo, new EntityRepository(Open), new CountSheetRepository(Open),
-            new ActivityRepository(Open, Locks.HeartbeatInterval), new VisionRepository(Open)), Person(email, admin), tab ?? NewTab(), fencing);
+            new ActivityRepository(Open, Locks.HeartbeatInterval), new VisionRepository(Open), reports ?? Reports()), Person(email, admin), tab ?? NewTab(), fencing);
+
+    /// <summary>The report service over this harness's database and drawing folder. Pass renderers to replace the real ones.</summary>
+    public ReportService Reports(IEnumerable<IReportRenderer>? renderers = null) =>
+        new(Open, JobRepo, new CountSheetRepository(Open), new RuleRepository(Open), new ActivityRepository(Open, Locks.HeartbeatInterval), new FileSystemArtifactStore(ArtifactRoot), renderers);
+
+    public DuctworkReportsController ReportsApi(string email) => With(new DuctworkReportsController(JobRepo, Reports()), Person(email), NewTab(), null);
 
     public DuctworkLockController LockApi(string email, string tab, long? fencing = null, bool admin = false) =>
         With(new DuctworkLockController(JobRepo, LockService), Person(email, admin), tab, fencing);
@@ -214,6 +221,9 @@ public sealed class ApiHarness(DuctworkDatabase db)
             case FileStreamResult file:
                 return new Reply(200, JsonDocument.Parse(JsonSerializer.Serialize(new { contentType = file.ContentType, downloadName = file.FileDownloadName })).RootElement.Clone())
                     { Stream = file.FileStream };
+            case FileContentResult bytes:
+                return new Reply(200, JsonDocument.Parse(JsonSerializer.Serialize(new { contentType = bytes.ContentType, downloadName = bytes.FileDownloadName })).RootElement.Clone())
+                    { Stream = new MemoryStream(bytes.FileContents) };
             case ViewResult view:
                 return new Reply(200, JsonDocument.Parse(JsonSerializer.Serialize(new { model = view.Model }, DuctworkJson.Options)).RootElement.Clone());
             case NotFoundResult:

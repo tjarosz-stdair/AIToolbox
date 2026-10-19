@@ -9,6 +9,7 @@ using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Llm;
+using AIToolbox.Ductwork.Core.Reports;
 using AIToolbox.Ductwork.Core.Review;
 using AIToolbox.Ductwork.Core.Rules;
 using AIToolbox.Ductwork.Core.Tasks;
@@ -218,6 +219,7 @@ public sealed class DuctworkApiExceptionAttribute : ExceptionFilterAttribute
         UploadBusyException => (409, new { code = "busy", error = ex.Message }),
         ChunkIntegrityException => (422, new { code = "checksum", error = ex.Message }),
         ResultRejectedException rejected => (422, new { code = "result-rejected", error = ex.Message, reasons = rejected.Reasons }),
+        ReportIntegrityException => (422, new { code = "report-corrupt", error = ex.Message }),
         ArchiveMissingException => (404, new { code = "archive-missing", error = ex.Message }),
         ArchiveCorruptException corrupt => (422, new { code = "archive-corrupt", error = ex.Message, problems = corrupt.Problems }),
         JobRuleViolationException => (422, new { code = "rule", error = ex.Message }),
@@ -277,6 +279,8 @@ public static class DuctworkServiceCollectionExtensions
 
         services.AddSingleton(sp => new ArchiveService(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(), sp.GetRequiredService<IArtifactStore>(),
             sp.GetRequiredService<IArchiveStore>(), sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ToArchiveSettings()));
+        services.AddSingleton(sp => new ReportService(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(), sp.GetRequiredService<JobRepository>(), sp.GetRequiredService<CountSheetRepository>(),
+            sp.GetRequiredService<RuleRepository>(), sp.GetRequiredService<ActivityRepository>(), sp.GetRequiredService<IArtifactStore>()));
         services.AddSingleton(sp => new ToolPermissionRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new WorkerRegistry(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new VisionRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));

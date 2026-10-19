@@ -142,6 +142,14 @@ function lifecycleCard(ctx, j, repaint) {
     }, "Close job"));
   }
 
+  // A report run that failed leaves the job Completing. It is not done until its reports exist, so say so and offer to try again.
+  if (ctx.mayEdit && state === "Completing") {
+    buttons.push(h("button", {
+      class: "btn btn-success btn-sm", type: "button",
+      onclick: async () => { if (await ctx.run(() => ctx.api.post(`/jobs/${ctx.jobId}/complete/finish`), { ok: "The job is complete." })) repaint(); else repaint(); }
+    }, "Finish completing"));
+  }
+
   if (ctx.mayEdit && (state === "Complete" || state === "Closed")) {
     buttons.push(h("button", {
       class: "btn btn-primary btn-sm", type: "button",

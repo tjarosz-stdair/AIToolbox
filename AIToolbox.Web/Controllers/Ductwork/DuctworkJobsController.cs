@@ -3,6 +3,7 @@ using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Llm;
+using AIToolbox.Ductwork.Core.Reports;
 using AIToolbox.Ductwork.Core.Tasks;
 using AIToolbox.Web.Ductwork;
 using Microsoft.AspNetCore.Mvc;
@@ -18,7 +19,8 @@ public sealed class DuctworkJobsController(
     EntityRepository entities,
     CountSheetRepository countSheets,
     ActivityRepository activity,
-    VisionRepository vision) : DuctworkUserApiController
+    VisionRepository vision,
+    ReportService reports) : DuctworkUserApiController
 {
     // ------------------------------------------------------------------ jobs
 
@@ -104,8 +106,17 @@ public sealed class DuctworkJobsController(
     [HttpPost("{jobId:long}/complete")]
     public async Task<IActionResult> BeginComplete(long jobId, CancellationToken ct) => Json(await jobs.BeginCompleteAsync(jobId, Audit(), ct));
 
+    /// <summary>
+    /// Finishes completing. The issued reports are made first, from the state the job is frozen in; if that fails the job stays Completing and this
+    /// can be called again, so a job is never Complete without its reports.
+    /// </summary>
     [HttpPost("{jobId:long}/complete/finish")]
-    public async Task<IActionResult> FinishComplete(long jobId, CancellationToken ct) => Json(await jobs.FinishCompleteAsync(jobId, Audit(), ct));
+    public async Task<IActionResult> FinishComplete(long jobId, CancellationToken ct)
+    {
+        var audit = Audit();
+        await reports.IssueAsync(jobId, audit, ct);
+        return Json(await jobs.FinishCompleteAsync(jobId, audit, ct));
+    }
 
     [HttpPost("{jobId:long}/close")]
     public async Task<IActionResult> Close(long jobId, [FromBody] ReasonRequest request, CancellationToken ct) =>
