@@ -433,6 +433,7 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapControllers();
 app.MapHub<CallMonitorHub>("/hubs/call-monitor");
+app.MapHub<DuctworkProgressHub>(DuctworkProgressHub.Path);
 
 app.MapControllerRoute(
     name: "default",

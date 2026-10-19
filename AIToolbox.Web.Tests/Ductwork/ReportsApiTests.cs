@@ -26,13 +26,21 @@ public class ReportsApiTests(DuctworkDatabase db) : IClassFixture<DuctworkDataba
 
         Assert.Equal((200, "Complete"), (done.Status, done["state"].GetString()));
         var list = await RunAsync(() => _h.ReportsApi(Viewer).List(id, default));
-        Assert.Equal(["html", "xlsx"], list.Body.EnumerateArray().Select(r => r.GetProperty("format").GetString()).Order());
+        Assert.Equal(["html", "pdf", "xlsx"], list.Body.EnumerateArray().Select(r => r.GetProperty("format").GetString()).Order());
 
         var xlsx = list.Body.EnumerateArray().Single(r => r.GetProperty("format").GetString() == "xlsx");
         var download = await RunAsync(() => _h.ReportsApi(Viewer).Download(id, xlsx.GetProperty("reportId").GetGuid(), default));
         Assert.Contains("spreadsheetml", download["contentType"].GetString());
         Assert.StartsWith($"count-sheet-{id}-v1-", download["downloadName"].GetString());
         Assert.Equal(xlsx.GetProperty("bytes").GetInt64(), download.Stream!.Length);
+
+        var pdf = list.Body.EnumerateArray().Single(r => r.GetProperty("format").GetString() == "pdf");
+        var pdfDownload = await RunAsync(() => _h.ReportsApi(Viewer).Download(id, pdf.GetProperty("reportId").GetGuid(), default));
+        Assert.Equal("application/pdf", pdfDownload["contentType"].GetString());
+        Assert.EndsWith(".pdf", pdfDownload["downloadName"].GetString());
+        var header = new byte[5];
+        await pdfDownload.Stream!.ReadExactlyAsync(header);
+        Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(header));
     }
 
     [Fact]

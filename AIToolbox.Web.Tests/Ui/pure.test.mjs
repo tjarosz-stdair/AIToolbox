@@ -411,3 +411,114 @@ test("a view is named by its title and its scale, or just its title when no scal
   assert.equal(g.viewLabel({ title: "2. ROOF DETAIL", scaleRatio: null }), "2. ROOF DETAIL");
   assert.equal(g.viewLabel({ title: "ODD", scaleRatio: 37 }), "ODD: 1 : 37");
 });
+
+// ------------------------------------------------------------------ live progress
+
+function fakeHub({ failStart = 0 } = {}) {
+  const hub = { calls: [], handlers: {}, starts: 0, stops: 0 };
+  hub.connection = {
+    on: (name, fn) => { hub.handlers[name] = fn; },
+    onreconnecting: (fn) => { hub.handlers.reconnecting = fn; },
+    onreconnected: (fn) => { hub.handlers.reconnected = fn; },
+    onclose: (fn) => { hub.handlers.close = fn; },
+    start: async () => { hub.starts++; if (hub.starts <= failStart) throw new Error("no hub"); },
+    stop: async () => { hub.stops++; },
+    invoke: async (name, ...args) => { hub.calls.push([name, ...args]); }
+  };
+  return hub;
+}
+
+async function progressClient(hub, extra = {}) {
+  const { ProgressClient } = await import("../../AIToolbox.Web/wwwroot/js/ductwork/progress.js");
+  const timers = [];
+  const client = new ProgressClient({ signalr: "/lib/signalr.js", progressHub: "/hubs/x" }, {
+    createConnection: async () => hub.connection, setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: () => {}, ...extra
+  });
+  return { client, timers };
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+test("watching a job asks the hub for it and hands each pushed change to the page", async () => {
+  const hub = fakeHub();
+  const { client } = await progressClient(hub);
+  const seen = [];
+
+  client.watch(7, (events, info) => seen.push([events, info]));
+  await tick();
+  hub.handlers.progress(7, [{ kind: "task", id: "1", status: "Running" }]);
+  hub.handlers.progress(8, [{ kind: "task", id: "2" }]);   // another job's change is not this page's
+
+  assert.deepEqual(hub.calls, [["Watch", 7]]);
+  assert.equal(client.connected, true);
+  assert.deepEqual(seen, [[[{ kind: "task", id: "1", status: "Running" }], { resync: false }]]);
+});
+
+test("a page that stops watching tells the hub, and a second page on the same job keeps it", async () => {
+  const hub = fakeHub();
+  const { client } = await progressClient(hub);
+  const stopA = client.watch(7, () => {});
+  const stopB = client.watch(7, () => {});
+  await tick();
+
+  stopA();
+  assert.deepEqual(hub.calls.filter((c) => c[0] === "Unwatch"), []);
+  stopB();
+  assert.deepEqual(hub.calls.filter((c) => c[0] === "Unwatch"), [["Unwatch", 7]]);
+});
+
+test("after the connection comes back every job is watched again and the page is told to re-read", async () => {
+  const hub = fakeHub();
+  const { client } = await progressClient(hub);
+  const states = [];
+  client.onState((s) => states.push(s));
+  const seen = [];
+  client.watch(7, (events, info) => seen.push(info.resync));
+  await tick();
+
+  hub.handlers.reconnecting();
+  assert.equal(client.connected, false);
+  await hub.handlers.reconnected();
+
+  assert.equal(client.connected, true);
+  assert.deepEqual(hub.calls, [["Watch", 7], ["Watch", 7]]);
+  assert.deepEqual(seen, [true]);
+  assert.deepEqual(states, [true, false, true]);
+});
+
+test("a hub that will not start leaves the page polling, and the client tries again later", async () => {
+  const hub = fakeHub({ failStart: 1 });
+  const { client, timers } = await progressClient(hub);
+
+  client.watch(7, () => {});
+  await tick();
+  assert.equal(client.connected, false);
+  assert.equal(timers.length, 1);
+
+  await timers[0].fn();
+  assert.equal(client.connected, true);
+  assert.deepEqual(hub.calls, [["Watch", 7]]);
+});
+
+test("without the hub address or script the client does nothing at all", async () => {
+  const { ProgressClient } = await import("../../AIToolbox.Web/wwwroot/js/ductwork/progress.js");
+  const client = new ProgressClient({});
+
+  const stop = client.watch(7, () => assert.fail("no events"));
+  stop();
+
+  assert.equal(client.connected, false);
+});
+
+test("settle runs once after a burst of requests", async () => {
+  const { settle } = await import("../../AIToolbox.Web/wwwroot/js/ductwork/progress.js");
+  const timers = new Map();
+  let n = 0;
+  const run = settle(() => n++, 400, { setTimeout: (fn) => { const id = timers.size + 1; timers.set(id, fn); return id; }, clearTimeout: (id) => timers.delete(id) });
+
+  run(); run(); run();
+  assert.equal(timers.size, 1);
+  [...timers.values()][0]();
+
+  assert.equal(n, 1);
+});

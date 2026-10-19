@@ -52,7 +52,7 @@ public sealed class ReportService
         _rules = rules;
         _activity = activity;
         _store = store;
-        _renderers = (renderers ?? [new ExcelReportRenderer(), new HtmlReportRenderer()]).ToList();
+        _renderers = (renderers ?? [new ExcelReportRenderer(), new HtmlReportRenderer(), new PdfReportRenderer()]).ToList();
     }
 
     public IReadOnlyList<string> Formats => _renderers.Select(r => r.Format).ToList();

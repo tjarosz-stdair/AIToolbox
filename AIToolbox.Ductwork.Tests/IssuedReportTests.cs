@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using AIToolbox.Ductwork.Contracts;
 using AIToolbox.Ductwork.Core.Activity;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Drawings;
@@ -7,6 +8,7 @@ using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Reports;
 using AIToolbox.Ductwork.Core.Rules;
 using ClosedXML.Excel;
+using PdfSharp.Pdf.IO;
 using Microsoft.Data.SqlClient;
 
 namespace AIToolbox.Ductwork.Tests;
@@ -83,14 +85,14 @@ public sealed class IssuedReportTests(SqlFixture db) : IClassFixture<SqlFixture>
     // ---------------------------------------------------------------- issuing
 
     [Fact]
-    public async Task Issuing_stores_an_excel_and_an_html_file_with_hashes_from_the_same_model()
+    public async Task Issuing_stores_an_excel_an_html_and_a_pdf_file_with_hashes_from_the_same_model()
     {
         var job = await CompletingJobAsync();
         var reports = Service();
 
         var issued = await reports.IssueAsync(job.JobId, Ctx(Owner));
 
-        Assert.Equal(["xlsx", "html"], issued.OrderByDescending(r => r.Format).Select(r => r.Format));
+        Assert.Equal(["xlsx", "pdf", "html"], issued.OrderByDescending(r => r.Format).Select(r => r.Format));
         Assert.Single(issued.Select(r => r.ModelHash).Distinct());                           // both drawn from one state
         Assert.All(issued, r => { Assert.Equal(1, r.CompletionVersion); Assert.True(r.IsFinal); Assert.True(r.Bytes > 0); });
 
@@ -158,6 +160,54 @@ public sealed class IssuedReportTests(SqlFixture db) : IClassFixture<SqlFixture>
         Assert.Contains("&lt;script&gt;", text);
         Assert.Contains("default-src 'none'", text);                                          // and a policy that forbids scripts anyway
         Assert.Contains("HYPERLINK", Encoding.UTF8.GetString(html));
+
+        // A PDF only ever draws the text, so hostile text is just text: the file still opens as a PDF and carries no script or action.
+        var (pdf, _, _) = await reports.GetDraftAsync(job.JobId, "pdf", Owner);
+        var raw = Encoding.Latin1.GetString(pdf);
+        Assert.DoesNotContain("/JavaScript", raw);
+        Assert.DoesNotContain("/OpenAction", raw);
+        Assert.DoesNotContain("/URI", raw);
+        using var opened = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.ReadOnly);
+        Assert.True(opened.PageCount >= 1);
+    }
+
+    [Fact]
+    public async Task The_pdf_is_a_landscape_document_that_names_the_job_and_says_whether_it_is_final()
+    {
+        var job = await SeedAsync(confirmed: false);
+        var reports = Service();
+
+        var (bytes, name, contentType) = await reports.GetDraftAsync(job.JobId, "pdf", Owner);
+
+        Assert.Equal("application/pdf", contentType);
+        Assert.EndsWith(".pdf", name);
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(bytes, 0, 5));
+        using var pdf = PdfReader.Open(new MemoryStream(bytes), PdfDocumentOpenMode.ReadOnly);
+        Assert.True(pdf.PageCount >= 1);
+        Assert.True(pdf.Pages[0].Width.Point > pdf.Pages[0].Height.Point);                    // landscape
+        Assert.StartsWith("Count sheet:", pdf.Info.Title);
+        Assert.Equal("Draft (not issued)", pdf.Info.Subject);
+    }
+
+    [Fact]
+    public void A_long_sheet_runs_onto_more_pages_and_a_control_character_in_the_text_does_not_break_it()
+    {
+        var lines = Enumerable.Range(0, 400).Select(i => new CountLine
+        {
+            Type = "Boot " + i, Size = "4x10x" + i, Unit = QuantityUnit.EA, QuantityPerBuilding = 1, Multiplier = 2, ExtendedQuantity = 2, State = ExtendedState.Known, EntityCount = 1, VerifiedCount = 1
+        }).ToList();
+        var model = new ReportModel
+        {
+            Job = new ReportJob(1, "Long job", null, null, null, Owner, "Completing", 1, null, DateTime.UtcNow),
+            Sheet = new CountSheet { Blocks = [new CountBlock { BuildingTypeId = 5, Name = "Type 1", Multiplier = 2, MultiplierConfirmed = true, Lines = lines }], Totals = [], OpenItems = [] },
+            Rules = [], Details = [], Metrics = new ReportMetrics(1, 0, 1, new Dictionary<string, double>()), ForCompletionVersion = 1
+        };
+
+        var pdf = new PdfReportRenderer().Render(model, new ReportStamp("someone@example.com", new DateTime(2026, 10, 19, 12, 0, 0, DateTimeKind.Utc), IsIssued: true));
+
+        using var opened = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.ReadOnly);
+        Assert.True(opened.PageCount > 3);
+        Assert.Equal("Issued report", opened.Info.Subject);
     }
 
     [Fact]
@@ -217,7 +267,7 @@ public sealed class IssuedReportTests(SqlFixture db) : IClassFixture<SqlFixture>
         Assert.Equal(JobState.Completing, (await new JobRepository(db.ConnectionString).GetAsync(job.JobId))!.State);
         var dir = Path.Combine(_root, "final", "reports", job.JobId.ToString());
         Assert.False(Directory.Exists(dir) && Directory.EnumerateFiles(dir).Any());           // the half-made file was removed
-        Assert.Equal(2, (await Service().IssueAsync(job.JobId, Ctx(Owner))).Count);
+        Assert.Equal(3, (await Service().IssueAsync(job.JobId, Ctx(Owner))).Count);
     }
 
     // ---------------------------------------------------------------- records that cannot change
@@ -249,7 +299,7 @@ public sealed class IssuedReportTests(SqlFixture db) : IClassFixture<SqlFixture>
         var second = await reports.IssueAsync(job.JobId, Ctx(Owner));
 
         var all = await reports.ListReportsAsync(job.JobId);
-        Assert.Equal(4, all.Count);
+        Assert.Equal(6, all.Count);
         Assert.Equal(second.Max(r => r.ReportId), all[0].ReportId);
         Assert.Empty(first.Select(r => r.PublicId).Intersect(second.Select(r => r.PublicId)));
     }

@@ -2,8 +2,13 @@
 // drawings and hands back proposals; nothing it finds counts until a person has checked it on the Review tab.
 
 import { h, clear, badge, fmtDate, confirmDialog, select, field, dialog } from "./util.js";
+import { settle } from "./progress.js";
 
 const ACTIVE = new Set(["Queued", "Running"]);
+
+// While the live connection is up, changes arrive as they happen and this only re-reads now and then in case one was missed. Without it the tab asks every few seconds.
+const POLL_MS = 3000;
+const SAFETY_MS = 30000;
 
 export async function render(container, ctx) {
   let timer = null;
@@ -15,11 +20,16 @@ export async function render(container, ctx) {
     clear(container);
     container.append(...[workerNotice(workers, tasks || []), runCard(ctx, types || [], approvals || [], paint), tasksCard(ctx, tasks || [], paint)].filter(Boolean));
     clearTimeout(timer);
-    if ((tasks || []).some((t) => ACTIVE.has(t.status))) timer = setTimeout(() => { if (container.isConnected) paint(); }, 3000);
+    if ((tasks || []).some((t) => ACTIVE.has(t.status))) timer = setTimeout(() => { if (container.isConnected) paint(); }, ctx.progress?.connected ? SAFETY_MS : POLL_MS);
   };
 
+  // A burst of events for one task is one repaint.
+  const repaint = settle(() => { if (container.isConnected) paint(); }, 400);
+  const stopWatching = ctx.progress?.watch(ctx.jobId, (events, { resync }) => { if (resync || events.some((e) => e.kind === "task")) repaint(); });
+  const stopState = ctx.progress?.onState(() => repaint());
+
   await paint();
-  return { dispose() { clearTimeout(timer); }, refresh: paint };
+  return { dispose() { clearTimeout(timer); repaint.cancel(); stopWatching?.(); stopState?.(); }, refresh: paint };
 }
 
 /** Queued work with nobody to do it looks exactly like slow work, so say so. Counts only: who the workers are is for administrators. */

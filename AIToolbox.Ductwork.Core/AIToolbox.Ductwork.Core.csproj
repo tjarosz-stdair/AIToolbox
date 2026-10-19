@@ -10,6 +10,9 @@
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <!-- Draws the PDF count sheet. Keep at 6.2.0: that is the last MIT release. 6.3 and later (6.5.0 checked) are AGPL-3.0 and refuse to run without a license key,
+         so moving past 6.2.x is a licensing decision, not an upgrade. -->
+    <PackageReference Include="PDFsharp-MigraDoc" Version="[6.2.0]" />
     <!-- Transitive pin: Pkcs 9.0.13 (via Microsoft.Data.SqlClient) carries known advisories. Same pin as AIToolbox.Web. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>

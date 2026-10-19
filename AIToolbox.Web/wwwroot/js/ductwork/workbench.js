@@ -4,6 +4,7 @@
 
 import { createApi, ApiError } from "./api.js";
 import { LockManager } from "./lock.js";
+import { ProgressClient } from "./progress.js";
 import { h, clear, toast, badge, titleCase, confirmDialog } from "./util.js";
 
 const TABS = [
@@ -32,6 +33,7 @@ export class JobContext {
     this.listeners = new Map();
     this.cache = {};
     this.lock = new LockManager(api, boot.jobId, { onChange: (s) => this.emit("lock", s) });
+    this.progress = new ProgressClient(boot);
   }
 
   // ---- events

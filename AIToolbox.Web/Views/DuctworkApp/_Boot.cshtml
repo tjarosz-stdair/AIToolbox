@@ -8,5 +8,7 @@
      data-admin="@(Model.IsAdmin ? "true" : "false")"
      data-manager="@(Model.IsJobManager ? "true" : "false")"
      data-pdfjs="@Url.Content("~/lib/pdfjs/pdf.min.mjs")"
-     data-pdfjs-worker="@Url.Content("~/lib/pdfjs/pdf.worker.min.mjs")"></div>
+     data-pdfjs-worker="@Url.Content("~/lib/pdfjs/pdf.worker.min.mjs")"
+     data-signalr="@Url.Content("~/lib/signalr/signalr.min.js")"
+     data-progress-hub="@Url.Content("~/hubs/ductwork-progress")"></div>
 <form id="dw-token-form" class="d-none">@Html.AntiForgeryToken()</form>

@@ -1,6 +1,7 @@
 // Overview: who and what the job is, how far along it is, who is on it, and its lifecycle (complete, close, reopen).
 
 import { h, clear, field, select, badge, titleCase, fmtDate, toast, promptDialog, confirmDialog } from "./util.js";
+import { settle } from "./progress.js";
 import { archiveBadge, archiveFacts, isActive, operationLine, progressBar, requestArchive, requestRestore } from "./archive-ui.js";
 
 const REVIEW_LEVELS = [
@@ -21,7 +22,7 @@ export async function render(container, ctx) {
     const canChange = ctx.canChange;
     const archive = await ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/archive`));
     clearTimeout(timer);
-    if (archive?.operations?.[0] && isActive(archive.operations[0])) timer = setTimeout(() => { if (container.isConnected) paint(); }, 2500);
+    if (archive?.operations?.[0] && isActive(archive.operations[0])) timer = setTimeout(() => { if (container.isConnected) paint(); }, ctx.progress?.connected ? 30000 : 2500);
 
     container.append(
       h("div", { class: "dw-grid2" },
@@ -30,8 +31,13 @@ export async function render(container, ctx) {
       h("div", { class: "dw-grid2" }, membersCard(ctx, view, paint), h("div", {}, tagsCard(ctx, view, paint), activityCard(ctx))));
   };
 
+  // Archive and restore report as they go; the overview repaints when its job's operation changes, and falls back to a timer without the connection.
+  const repaint = settle(() => { if (container.isConnected) paint(); }, 400);
+  const stopWatching = ctx.progress?.watch(ctx.jobId, (events, { resync }) => { if (resync || events.some((e) => e.kind === "archive")) repaint(); });
+  const stopState = ctx.progress?.onState(() => repaint());
+
   await paint();
-  return { dispose() { clearTimeout(timer); }, refresh: paint };
+  return { dispose() { clearTimeout(timer); repaint.cancel(); stopWatching?.(); stopState?.(); }, refresh: paint };
 }
 
 /** Archive and restore. A job being archived or restored is held still, so this card says what is happening and when it will be done. */

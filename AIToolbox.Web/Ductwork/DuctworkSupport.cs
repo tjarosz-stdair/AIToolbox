@@ -9,6 +9,7 @@ using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Drawings;
 using AIToolbox.Ductwork.Core.Jobs;
 using AIToolbox.Ductwork.Core.Llm;
+using AIToolbox.Ductwork.Core.Progress;
 using AIToolbox.Ductwork.Core.Reports;
 using AIToolbox.Ductwork.Core.Review;
 using AIToolbox.Ductwork.Core.Rules;
@@ -290,9 +291,14 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new EntityReviewRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new SheetRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
 
+        services.AddSingleton<IJobProgressSink, HubJobProgressSink>();
+        services.AddSingleton(sp => new JobProgressTracker(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(), sp.GetRequiredService<IJobProgressSink>()));
+        services.AddSingleton<DuctworkProgressWatches>();
+
         services.AddHostedService<DuctworkMigrationService>();
         services.AddHostedService<DuctworkUploadSweepService>();
         services.AddHostedService<DuctworkArchiveRunnerService>();
+        services.AddHostedService<DuctworkProgressService>();
         return services;
     }
 }

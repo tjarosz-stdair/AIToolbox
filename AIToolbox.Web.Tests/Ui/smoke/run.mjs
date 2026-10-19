@@ -89,7 +89,7 @@ try {
 
   await step("questions and rules tab", async () => { await tab("findings", "Questions (1 open)", "is the depth 7?", "4x12x4", "Rules", "Depth 7", "When type is Boot and size matches"); });
   await step("count sheet tab says why it is not final", async () => {
-    await tab("count", "Not final yet", "Type 5", "have no confirmed multiplier", "78 EA", "TBD", "Unanswered questions", "Still to be determined", "Download Excel", "Issued reports", "count-sheet-1-v1-20261016.xlsx", "final");
+    await tab("count", "Not final yet", "Type 5", "have no confirmed multiplier", "78 EA", "TBD", "Unanswered questions", "Still to be determined", "Download Excel", "Download PDF", "Issued reports", "count-sheet-1-v1-20261016.xlsx", "final");
   });
   await step("hosted vision tab", async () => { await tab("vision", "Hosted vision is available", "Approve sending pages", "M1.2", "no live text", "No approvals have been given"); });
   await step("audit tab verifies the log", async () => {
