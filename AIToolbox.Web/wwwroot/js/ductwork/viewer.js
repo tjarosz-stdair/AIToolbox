@@ -22,6 +22,8 @@ export class SheetViewer {
     this.view = { scale: 1, x: 0, y: 0 };
     this.items = [];                        // [{ id, box, status, dashed, label }]
     this.regions = [];                      // [{ kind, polygon }]
+    this.views = [];                        // [{ label, polygon }] the views on the sheet that have an area of their own
+    this.showViews = true;
     this.selectedId = null;
     this.tool = "select";                   // select | add | calibrate | region
     this.draft = null;                      // what the current tool has so far: points, or a rubber band
@@ -80,6 +82,17 @@ export class SheetViewer {
 
   setItems(items) { this.items = items; this.draw(); }
   setRegions(regions) { this.regions = regions; this.draw(); }
+
+  /** The views found on or set up for the sheet. Only a view with its own area is drawn; one that is the whole page needs no outline. */
+  setViews(views, show = this.showViews) { this.views = views.filter((v) => Array.isArray(v.polygon) && v.polygon.length >= 3); this.showViews = show; this.draw(); }
+
+  /** Brings a view's area to fill the viewer. */
+  focusPolygon(polygon) {
+    const xs = polygon.map((p) => p[0]);
+    const ys = polygon.map((p) => p[1]);
+    this.view = geo.focusBox(this.view, [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], this.width, this.height);
+    this._viewChanged();
+  }
 
   select(id, { focus = false } = {}) {
     this.selectedId = id;
@@ -176,7 +189,8 @@ export class SheetViewer {
     ctx.clearRect(0, 0, this.width, this.height);
     if (!this.page) return;
 
-    // Regions first, so items sit on top of them.
+    // Views and regions first, so items sit on top of them.
+    if (this.showViews) for (const view of this.views) this._drawView(ctx, view);
     for (const region of this.regions) this._drawRegion(ctx, region);
 
     const visible = geo.visibleItems(this.view, this.items, this.width, this.height);
@@ -217,6 +231,32 @@ export class SheetViewer {
       ctx.fillText(item.label, x, Math.max(10, y - 3));
     }
 
+    ctx.restore();
+  }
+
+  _drawView(ctx, view) {
+    const pts = view.polygon.map((p) => geo.toScreen(this.view, p[0], p[1]));
+    ctx.save();
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.strokeStyle = "#2563eb";
+    ctx.setLineDash([14, 6]);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // A label at the top-left corner, kept on screen, so the person can tell which view is which and what scale it is.
+    const left = Math.min(...pts.map((p) => p[0]));
+    const top = Math.min(...pts.map((p) => p[1]));
+    ctx.setLineDash([]);
+    ctx.font = "12px system-ui, sans-serif";
+    const text = view.label;
+    const w = ctx.measureText(text).width + 10;
+    const x = Math.max(2, left);
+    const y = Math.max(2, top);
+    ctx.fillStyle = "rgba(37,99,235,0.9)";
+    ctx.fillRect(x, y, w, 18);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(text, x + 5, y + 13);
     ctx.restore();
   }
 

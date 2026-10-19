@@ -132,7 +132,7 @@ def test_the_command_writes_the_pages_in_the_shape_the_server_takes(tmp_path):
     assert main(["sheets", pdf, "--out", str(out)]) == 0
 
     page = json.loads(out.read_text())["pages"][0]
-    assert set(page) == {"pageNo", "widthPts", "heightPts", "rotation", "sheetNumber", "title", "discipline", "kind", "contentHash", "hasTextLayer"}
+    assert set(page) == {"pageNo", "widthPts", "heightPts", "rotation", "sheetNumber", "title", "discipline", "kind", "contentHash", "hasTextLayer", "views"}
     assert (page["pageNo"], page["rotation"], page["sheetNumber"], page["kind"], page["hasTextLayer"]) == (1, 270, "M1.6", "Plan", True)
 
 

@@ -44,7 +44,8 @@ public sealed class SheetIdentificationTests : IDisposable
             pages = pages.Select(p => new
             {
                 pageNo = p.No, widthPts = 2592.0, heightPts = 1728.0, rotation = 270, sheetNumber = p.Number, title = "MECHANICAL PLAN", discipline = p.Discipline,
-                kind = p.Kind, contentHash = new string((char)('a' + p.No), 64), hasTextLayer = true
+                kind = p.Kind, contentHash = new string((char)('a' + p.No), 64), hasTextLayer = true,
+                views = new[] { new { title = "MECHANICAL PLAN", number = "1", type = "Plan", scaleRatio = (double?)48.0, polygon = (double[][]?)null } }
             })
         });
         File.WriteAllText(Value(args, "--out"), json);
@@ -85,6 +86,8 @@ public sealed class SheetIdentificationTests : IDisposable
         Assert.Equal(file, registeredFile);
         Assert.Equal(["M0.1", "M1.2", "E1.1"], pages.Select(p => p.SheetNumber));
         Assert.Equal(["Mechanical", "Mechanical", "Electrical"], pages.Select(p => p.Discipline));
+        var view = Assert.Single(pages[0].Views!);                                           // the views the reader found travel with the page
+        Assert.Equal(("MECHANICAL PLAN", "1", "Plan", 48.0), (view.Title, view.Number, view.Type, view.ScaleRatio));
         var args = Assert.Single(runner.Runs);
         Assert.Equal(["-B", "-m", "ductwork_sidecar", "sheets"], args.Take(4));
         Assert.EndsWith(".pdf", args[4]);

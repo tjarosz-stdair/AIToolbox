@@ -115,6 +115,7 @@ export async function render(container, ctx) {
     st.viewer.setItems(viewerItems());
     const sheet = currentSheet();
     st.viewer.setRegions((sheet?.regions || []).map((r) => ({ kind: r.kind, polygon: r.polygon })));
+    st.viewer.setViews((sheet?.views || []).map((v) => ({ label: geo.viewLabel(v), polygon: v.polygon })), st.showViews !== false);
     st.viewer.select(st.selectedId);
   };
 
@@ -371,7 +372,13 @@ export async function render(container, ctx) {
       tool("region", "Mark area", "Drag a rectangle to leave an area out of the count"),
       h("span", { class: "dw-sep" }),
       h("button", { class: "btn btn-outline-secondary btn-sm", type: "button", disabled: !ctx.canChange, title: "Undo my last change (U)", onclick: undoMine }, "Undo"),
-      sheet ? h("span", { class: "small text-muted ms-2" }, `${sheet.views.length ? sheet.views.map((v) => `${v.title}: ${geo.scaleLabel(v.scaleRatio)}`).join(" · ") : "No views set up"}`) : null);
+      h("button", { class: `btn btn-sm ${st.showViews === false ? "btn-outline-secondary" : "btn-outline-primary"}`, type: "button", "aria-pressed": st.showViews !== false, title: "Outline the views on this sheet",
+        onclick: () => { st.showViews = st.showViews === false; paintViewerItems(); paintTop(); } }, "Views"),
+      sheet ? h("span", { class: "d-inline-flex gap-1 flex-wrap ms-2 align-items-center" },
+        sheet.views.length ? sheet.views.map((v) => h("button", {
+          class: "btn btn-sm btn-link p-0 small", type: "button", title: Array.isArray(v.polygon) ? "Show this view" : "This view is the whole drawing",
+          onclick: () => { if (Array.isArray(v.polygon)) st.viewer.focusPolygon(v.polygon); }
+        }, geo.viewLabel(v))) : h("span", { class: "small text-muted" }, "No views set up")) : null);
     if (st.tool !== "select") els.top.append(h("span", { class: "dw-toolhint" }, { add: "Click where the item is.", calibrate: "Click two points a known distance apart.", region: "Drag a rectangle." }[st.tool]));
   }
 

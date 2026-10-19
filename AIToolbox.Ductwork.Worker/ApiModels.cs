@@ -42,7 +42,10 @@ public sealed record SubmitReply(bool Accepted, bool Cancelled, int Entities, in
 /// <summary>One page found in a drawing file, as the server records it.</summary>
 public sealed record PageReport(
     int PageNo, double WidthPts, double HeightPts, int Rotation = 0, string? SheetNumber = null, string? Title = null, string? Discipline = null,
-    string? Kind = null, string? ContentHash = null, bool HasTextLayer = true);
+    string? Kind = null, string? ContentHash = null, bool HasTextLayer = true, IReadOnlyList<PageViewReport>? Views = null);
+
+/// <summary>A view found on a page: where the title and scale label say it is, its printed scale as a ratio (null for NTS) and its area (null means the whole drawing area).</summary>
+public sealed record PageViewReport(string? Title, string? Number, string? Type, double? ScaleRatio, double[][]? Polygon);
 
 public sealed record RegisterSheetsReply(int Recorded, int Duplicates);
 

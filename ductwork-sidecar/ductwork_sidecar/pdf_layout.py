@@ -8,7 +8,7 @@ that on a rotated sheet silently puts every label in the wrong place, which is w
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 
@@ -197,11 +197,15 @@ class SheetFacts:
     spans: list[Span]
     has_text: bool
     content_hash: str     # SHA-256 hex of the drawing area (the title-block strip is left out)
+    # Where the line-work and text are, as points (centres of shapes and words), thinned to a bounded number. Used to find the
+    # empty gaps between the views on a sheet; not part of the content hash.
+    ink: list[tuple[float, float]] = field(default_factory=list)
 
 
 # The title block sits in a strip at one edge of the sheet. Re-issuing the same drawing under another project
 # name, number or date changes that strip and nothing else, so it is left out of the content hash.
 TITLE_STRIP_FROM = 0.88
+MAX_INK_POINTS = 40000
 
 
 def load_sheet_facts(path: str, pages: Iterable[int] | None = None) -> list[SheetFacts]:
@@ -245,14 +249,17 @@ def _facts_from_page(page, page_no: int, pymupdf) -> SheetFacts:
         digest.update(f"W|{x}|{y}|{text}\n".encode("utf-8"))
 
     shapes = []
+    ink: list[tuple[float, float]] = [(b.cx, b.cy) for _, _, _, b in ((0, 0, 0, to_box(w[:4])) for w in page.get_text("words")) if b.cx <= strip]
     for d in page.get_drawings():
         b = to_box(d["rect"])
         if b.cx > strip:
             continue
+        ink.append((b.cx, b.cy))
         fill = d.get("fill")
         shapes.append((round(b.x0), round(b.y0), round(b.x1), round(b.y1), len(d["items"]), tuple(round(c, 2) for c in fill) if fill else ()))
     shapes.sort()
     for s in shapes:
         digest.update(f"D|{s}\n".encode("utf-8"))
 
-    return SheetFacts(page_no, width, height, page.rotation, spans, bool(words), digest.hexdigest())
+    step = max(1, len(ink) // MAX_INK_POINTS)
+    return SheetFacts(page_no, width, height, page.rotation, spans, bool(words), digest.hexdigest(), ink[::step])

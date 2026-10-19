@@ -403,3 +403,11 @@ test("progress never reads past one hundred percent", async () => {
   const { operationLine } = await import("../../AIToolbox.Web/wwwroot/js/ductwork/archive-ui.js");
   assert.match(operationLine({ kind: "Restore", status: "Running", message: "x", progressDone: 150, progressTotal: 100 }), /\(100%\)$/);
 });
+
+// ------------------------------------------------------------------ views on a sheet
+
+test("a view is named by its title and its scale, or just its title when no scale is set", () => {
+  assert.equal(g.viewLabel({ title: "1. LEVEL 1 PLAN", scaleRatio: 96 }), "1. LEVEL 1 PLAN: 1/8\" = 1'-0\"");
+  assert.equal(g.viewLabel({ title: "2. ROOF DETAIL", scaleRatio: null }), "2. ROOF DETAIL");
+  assert.equal(g.viewLabel({ title: "ODD", scaleRatio: 37 }), "ODD: 1 : 37");
+});

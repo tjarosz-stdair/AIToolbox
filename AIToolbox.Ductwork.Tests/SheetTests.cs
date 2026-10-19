@@ -73,6 +73,66 @@ public sealed class SheetTests(SqlFixture db) : IClassFixture<SqlFixture>, IDisp
         Assert.True(back.InScope);
     }
 
+    private static NewDetectedView Found(string title, double? ratio, params double[][] polygon) =>
+        new() { Title = title, Type = ViewType.Plan, ScaleRatio = ratio, Polygon = polygon.Length == 0 ? null : polygon };
+
+    [Fact]
+    public async Task Views_a_reader_found_are_created_with_the_sheet_with_their_stated_scale_and_who_read_it()
+    {
+        var s = await JobWithFileAsync();
+        var page = Page(1) with
+        {
+            Views = [Found("1. LEVEL 1 PLAN", 96, [0, 0], [1000, 0], [1000, 800], [0, 800]), Found("2. ROOF DETAIL", null), new NewDetectedView { Title = "3. FAN DETAIL", Type = ViewType.Detail }]
+        };
+
+        var sheets = await new SheetRepository(Open).RegisterFromTaskAsync(await TaskAsync(s), s.File.PublicId, [page], AuditContext.ForWorker("c1:farm"));
+
+        var views = (await Sheets.ListByJobAsync(s.Job.JobId)).Single().Views.OrderBy(v => v.Title).ToList();
+        Assert.Equal(3, views.Count);
+        Assert.Equal(("1. LEVEL 1 PLAN", 96d, ScaleMethod.Stated, "c1:farm", ViewExtraction.Geometry), (views[0].Title, views[0].ScaleRatio, views[0].ScaleMethod, views[0].ScaleSetBy, views[0].ExtractionMethod));
+        Assert.NotNull(views[0].PolygonJson);
+        Assert.Null(views[1].ScaleRatio);                                                   // no scale printed means none is claimed
+        Assert.Null(views[1].PolygonJson);                                                  // whole page
+        Assert.Equal(ViewType.Detail, views[2].Type);
+        _ = sheets;
+    }
+
+    [Fact]
+    public async Task A_page_that_repeats_one_already_recorded_does_not_get_its_views_made_twice()
+    {
+        var a = await JobWithFileAsync(1);
+        var h = Hash("same");
+        await Sheets.RegisterAsync(a.Job.JobId, a.File.PublicId, [Page(1, h) with { Views = [Found("LEVEL 1 PLAN", 96)] }], a.Token, Ctx(Editor));
+        var second = await UploadAsync(a.Job.JobId, a.Token, 2);
+
+        await Sheets.RegisterAsync(a.Job.JobId, second.PublicId, [Page(1, h) with { Views = [Found("LEVEL 1 PLAN", 96)] }], a.Token, Ctx(Editor));
+
+        Assert.Equal(1, await db.ScalarAsync<int>("SELECT COUNT(*) FROM ductwork.SheetView WHERE JobId = @j;", ("@j", a.Job.JobId)));
+    }
+
+    [Fact]
+    public async Task A_view_outside_the_page_or_with_no_title_is_refused_or_skipped_and_never_half_recorded()
+    {
+        var s = await JobWithFileAsync();
+
+        var outside = await Assert.ThrowsAsync<JobRuleViolationException>(() =>
+            Sheets.RegisterAsync(s.Job.JobId, s.File.PublicId, [Page(1) with { Views = [Found("PLAN", 96, [0, 0], [99999, 0], [99999, 10])] }], s.Token, Ctx(Editor)));
+        Assert.Contains("outside the page", outside.Message);
+        Assert.Empty(await Sheets.ListByJobAsync(s.Job.JobId));                              // the page was not recorded either
+
+        await Sheets.RegisterAsync(s.Job.JobId, s.File.PublicId, [Page(1) with { Views = [Found("   ", 96), Found("PLAN", 96)] }], s.Token, Ctx(Editor));
+        Assert.Equal(["PLAN"], (await Sheets.ListByJobAsync(s.Job.JobId)).Single().Views.Select(v => v.Title));
+    }
+
+    private async Task<long> TaskAsync(Setup s)
+    {
+        var producer = await db.ScalarAsync<long>("INSERT INTO ductwork.Producer (ProducerKey, Kind, AlgorithmName, AlgorithmVersion, ParamsHash) OUTPUT inserted.ProducerId VALUES (@k, 'Algorithm', 'x', '1', 'h');", ("@k", "v-" + Guid.NewGuid().ToString("N")));
+        var id = await db.ScalarAsync<long>(
+            "INSERT INTO ductwork.ProcessingTask (JobId, TaskType, Status, ProducerId, ContractVersion, CreatedBy, LeaseOwner, LeaseExpiresUtc, StartedUtc, Attempt) OUTPUT inserted.ProcessingTaskId " +
+            "VALUES (@j, 'identify-sheets', 'Running', @p, '0.1.0', 'tests', 'c1:farm', DATEADD(MINUTE, 5, SYSUTCDATETIME()), SYSUTCDATETIME(), 1);", ("@j", s.Job.JobId), ("@p", producer));
+        return id;
+    }
+
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     private static NewSheet Page(int no, string? hash = null, string? number = null) => new()

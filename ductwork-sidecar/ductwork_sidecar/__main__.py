@@ -15,6 +15,7 @@ from .manifest import build_manifest
 from .pdf_layout import load_page_layout
 from .residential import detect
 from .sheet_id import identify, to_page_report
+from .views import default_view_type, find_views, to_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,11 +64,15 @@ def _sheets(args) -> int:
                 print("OCR is not installed; text-less pages are left unidentified.", file=sys.stderr)
             else:
                 identity = identify_text_less(args.pdf, facts.page_no - 1, engine)
-        pages.append(to_page_report(facts, identity))
+        # The views are read from the page's own text, so a page read by OCR has none yet.
+        # Only mechanical pages are counted, so the views on an electrical or architectural page are not worth recording.
+        counted = identity.discipline in (None, "Mechanical")
+        views = to_report(find_views(facts, default_view_type(identity.kind))) if facts.has_text and counted else []
+        pages.append(to_page_report(facts, identity, views))
 
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump({"pages": pages}, f, indent=2)
-    print(json.dumps({"pages": len(pages), "textLess": sum(1 for p in pages if not p["hasTextLayer"])}), file=sys.stderr)
+    print(json.dumps({"pages": len(pages), "textLess": sum(1 for p in pages if not p["hasTextLayer"]), "views": sum(len(p["views"]) for p in pages)}), file=sys.stderr)
     return 0
 
 

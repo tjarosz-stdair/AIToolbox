@@ -30,6 +30,19 @@ public sealed record NewSheet
     /// <summary>SHA-256 of the page's content, as hex. Pages with the same content are read once.</summary>
     public string? ContentHashHex { get; init; }
     public bool HasTextLayer { get; init; } = true;
+
+    /// <summary>Views a reader found on the page (each plan, section or detail with its scale). Created with the sheet.</summary>
+    public IReadOnlyList<NewDetectedView> Views { get; init; } = [];
+}
+
+/// <summary>A view found on a page by reading it, as a proposal: its scale is stated by the drawing and its area is a guess a person can redraw.</summary>
+public sealed record NewDetectedView
+{
+    public required string Title { get; init; }
+    public ViewType Type { get; init; } = ViewType.Plan;
+    public double? ScaleRatio { get; init; }
+    /// <summary>Null means the whole page.</summary>
+    public IReadOnlyList<double[]>? Polygon { get; init; }
 }
 
 public sealed record SheetEdit
@@ -131,6 +144,7 @@ public sealed record SheetRecord
 public sealed class SheetRepository
 {
     private const int MaxPagesPerRegistration = 2000;
+    private const int MaxViewsPerSheet = 60;
     private const int MaxPageNo = 10_000;
     private const int MaxPolygonPoints = 500;
 
@@ -198,6 +212,30 @@ public sealed class SheetRepository
         });
     }
 
+    private static async Task<int> InsertDetectedViewsAsync(JobTxn t, long sheetId, NewSheet page, string by)
+    {
+        var count = 0;
+        foreach (var view in page.Views.Take(MaxViewsPerSheet))
+        {
+            var title = Clean(view.Title, 200);
+            if (title is null) continue;
+            var polygon = view.Polygon is null ? null : PolygonJson(view.Polygon, page.WidthPts, page.HeightPts);
+            var scaled = view.ScaleRatio is > 0 && double.IsFinite(view.ScaleRatio.Value);
+            await JobRepository.ExecAsync(t.Connection, t.Transaction,
+                """
+                INSERT INTO ductwork.SheetView (JobId, SheetId, Title, RegionPolygonJson, ScaleRatio, ScaleMethod, ScaleSetBy, ScaleSetUtc, ViewType, ExtractionMethod, CreatedBy)
+                VALUES (@j, @s, @title, @poly, @ratio, @method, @setby, @setutc, @type, 'Geometry', @by);
+                """, t.Token,
+                ("@j", t.Job.JobId), ("@s", sheetId), ("@title", title), ("@poly", polygon),
+                // The scale was read off the drawing, so it is stated, and says who read it. A person can change it.
+                ("@ratio", scaled ? view.ScaleRatio : null), ("@method", scaled ? "Stated" : null), ("@setby", scaled ? by : null),
+                ("@setutc", scaled ? DateTime.UtcNow : null), ("@type", view.Type.ToString()), ("@by", by));
+            count++;
+        }
+
+        return count;
+    }
+
     /// <summary>A page with no discipline named is kept in scope; one named as anything but mechanical is left out.</summary>
     internal static bool IsCountableDiscipline(string? discipline) =>
         string.IsNullOrWhiteSpace(discipline) || discipline.Trim().StartsWith("Mech", StringComparison.OrdinalIgnoreCase) || discipline.Trim().Equals("HVAC", StringComparison.OrdinalIgnoreCase);
@@ -230,6 +268,7 @@ public sealed class SheetRepository
 
         var by = JobRepository.Actor(t.Context);
         var duplicates = 0;
+        var views = 0;
         foreach (var s in sheets.OrderBy(s => s.PageNo))
         {
             var hash = s.ContentHashHex is null ? null : Convert.FromHexString(s.ContentHashHex);
@@ -239,24 +278,28 @@ public sealed class SheetRepository
                     ("@j", t.Job.JobId), ("@h", hash));
             if (duplicateOf is not null) duplicates++;
 
-            await JobRepository.ExecAsync(t.Connection, t.Transaction,
+            var sheetId = await ScalarAsync(t,
                 """
                 INSERT INTO ductwork.Sheet (JobId, RevisionId, SourceFileId, PageNo, SheetNumber, Title, Discipline, SheetKind, ContentHash, DuplicateOfSheetId,
                                             HasTextLayer, WidthPts, HeightPts, Rotation, InScope, ProcessingTaskId, CreatedBy)
+                OUTPUT INSERTED.SheetId
                 VALUES (@j, @r, @f, @p, @num, @title, @disc, @kind, @h, @dup, @text, @w, @ht, @rot, @scope, @task, @by);
-                """, t.Token,
+                """,
                 ("@j", t.Job.JobId), ("@r", file.RevisionId), ("@f", file.SourceFileId), ("@p", s.PageNo), ("@num", Clean(s.SheetNumber, 40)), ("@title", Clean(s.Title, 200)),
                 ("@disc", Clean(s.Discipline, 20)), ("@kind", s.Kind.ToString()), ("@h", (object?)hash ?? System.Data.SqlTypes.SqlBinary.Null), ("@dup", duplicateOf),
                 ("@text", s.HasTextLayer), ("@w", s.WidthPts), ("@ht", s.HeightPts), ("@rot", s.Rotation),
                 // A page the job already holds is left out of scope, so it is read once, and so is a page that is plainly another discipline
                 // (electrical, plumbing, architectural), because only mechanical sheets are counted. A person can bring either back.
                 ("@scope", duplicateOf is null && IsCountableDiscipline(s.Discipline)), ("@task", taskId), ("@by", by));
+
+            // A page that repeats one already on the job is read once, so its views are not made twice.
+            if (duplicateOf is null) views += await InsertDetectedViewsAsync(t, sheetId, s, by);
         }
 
         await t.AuditAtCurrentVersionAsync(new AuditEntry("sheets", "sheets.registered",
-            $"Recorded {sheets.Count} page(s) of \"{file.OriginalName}\"" + (duplicates > 0 ? $", {duplicates} of them identical to a page already on this job." : "."),
+            $"Recorded {sheets.Count} page(s) of \"{file.OriginalName}\"" + (duplicates > 0 ? $", {duplicates} of them identical to a page already on this job" : "") + (views > 0 ? $"; found {views} view(s) on them." : "."),
             "SourceFile", sourceFilePublicId.ToString("D"), null,
-            JobRepository.Json(new() { ["pages"] = sheets.Count, ["duplicates"] = duplicates, ["file"] = file.OriginalName })));
+            JobRepository.Json(new() { ["pages"] = sheets.Count, ["duplicates"] = duplicates, ["views"] = views, ["file"] = file.OriginalName })));
 
         return await ListAsync(t.Connection, t.Transaction, "WHERE s.SourceFileId = @f ORDER BY s.PageNo", t.Token, ("@f", file.SourceFileId));
     }
@@ -500,7 +543,9 @@ public sealed class SheetRepository
     }
 
     /// <summary>A polygon is three or more finite points inside the page, stored as <c>[[x,y],...]</c>.</summary>
-    internal static string PolygonJson(IReadOnlyList<double[]> points, SheetRecord sheet)
+    internal static string PolygonJson(IReadOnlyList<double[]> points, SheetRecord sheet) => PolygonJson(points, sheet.WidthPts, sheet.HeightPts);
+
+    internal static string PolygonJson(IReadOnlyList<double[]> points, double width, double height)
     {
         if (points.Count < 3) throw new JobRuleViolationException("An area needs at least three points.");
         if (points.Count > MaxPolygonPoints) throw new JobRuleViolationException($"An area may have at most {MaxPolygonPoints} points.");
@@ -508,8 +553,8 @@ public sealed class SheetRepository
         {
             if (p is null || p.Length != 2) throw new JobRuleViolationException("Each point must be an x and a y.");
             if (!double.IsFinite(p[0]) || !double.IsFinite(p[1])) throw new JobRuleViolationException("A point is not a number.");
-            if (p[0] < 0 || p[1] < 0 || p[0] > sheet.WidthPts || p[1] > sheet.HeightPts)
-                throw new JobRuleViolationException($"A point ({p[0]:0.##}, {p[1]:0.##}) is outside the page ({sheet.WidthPts:0.##} by {sheet.HeightPts:0.##}).");
+            if (p[0] < 0 || p[1] < 0 || p[0] > width || p[1] > height)
+                throw new JobRuleViolationException($"A point ({p[0]:0.##}, {p[1]:0.##}) is outside the page ({width:0.##} by {height:0.##}).");
         }
 
         return JsonSerializer.Serialize(points);

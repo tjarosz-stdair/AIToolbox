@@ -94,7 +94,10 @@ public sealed record ResolveFindingRequest(string? Kind, Guid? RuleId, string? N
 // ---- sheets and views
 
 public sealed record SheetBody(int PageNo, double WidthPts, double HeightPts, int Rotation, string? SheetNumber, string? Title, string? Discipline, string? Kind,
-    string? ContentHash, bool? HasTextLayer);
+    string? ContentHash, bool? HasTextLayer, ViewBody[]? Views = null);
+
+/// <summary>A view a reader found on a page: its title (with its number if it has one), kind, printed scale as a ratio, and area.</summary>
+public sealed record ViewBody(string? Title, string? Number, string? Type, double? ScaleRatio, double[][]? Polygon);
 
 public sealed record RegisterSheetsRequest(SheetBody[]? Sheets);
 

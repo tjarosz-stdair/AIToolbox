@@ -157,10 +157,10 @@ def _kind(title: str | None) -> str:
     return "Other"
 
 
-def to_page_report(facts: SheetFacts, identity: SheetIdentity) -> dict:
+def to_page_report(facts: SheetFacts, identity: SheetIdentity, views: list[dict] | None = None) -> dict:
     """The camelCase shape the worker sends to the server's sheet registration."""
     return {
         "pageNo": facts.page_no, "widthPts": round(facts.width, 2), "heightPts": round(facts.height, 2), "rotation": facts.rotation,
         "sheetNumber": identity.sheet_number, "title": identity.title, "discipline": identity.discipline, "kind": identity.kind,
-        "contentHash": facts.content_hash, "hasTextLayer": facts.has_text,
+        "contentHash": facts.content_hash, "hasTextLayer": facts.has_text, "views": views or [],
     }

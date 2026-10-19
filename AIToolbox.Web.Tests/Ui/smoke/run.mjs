@@ -75,6 +75,18 @@ try {
   await step("drawings tab", async () => { await tab("drawings", "Drop PDF drawings here", "mech.pdf", "Sheets (2)", "no text"); });
   await step("setup tab", async () => { await tab("setup", "Building types and multipliers", "Type 4", "26 confirmed", "Type 5", "not set", "Views and scales"); });
   await step("detection tab", async () => { await tab("tasks", "Run detection", "detect-residential-labels", "classify-crops (hosted vision)", "Work on this job"); });
+  await step("review tab outlines the views found on a sheet and lets a person go to one", async () => {
+    await tab("review", "Views");
+    await s.eval("document.querySelector('button[title=\"Next sheet\"]').click()");
+    await expectText("1. LEVEL 2 PLAN: 1/8\" = 1'-0\"");
+    await s.eval("[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('1. LEVEL 2 PLAN')).click()");
+    await s.eval("document.querySelector('button[aria-pressed]').click()");        // switch the outlines off and on again without a script error
+    await s.eval("document.querySelector('button[aria-pressed]').click()");
+    // Back to the first sheet, where the later steps expect to be, and wait for it to be drawn.
+    await s.eval("document.querySelector('button[title=\"Previous sheet\"]').click()");
+    await s.waitFor("[...document.querySelectorAll('select')].some((x) => x.selectedOptions[0]?.textContent.includes('M1.1')) && !!document.querySelector('.dw-page')?.style.transform", 10000, "the first sheet");
+  });
+
   await step("questions and rules tab", async () => { await tab("findings", "Questions (1 open)", "is the depth 7?", "4x12x4", "Rules", "Depth 7", "When type is Boot and size matches"); });
   await step("count sheet tab says why it is not final", async () => {
     await tab("count", "Not final yet", "Type 5", "have no confirmed multiplier", "78 EA", "TBD", "Unanswered questions", "Still to be determined", "Download Excel", "Issued reports", "count-sheet-1-v1-20261016.xlsx", "final");

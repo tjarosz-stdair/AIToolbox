@@ -118,6 +118,11 @@ export function scaleLabel(ratio) {
   return known ? known[0] : `1 : ${Number(ratio.toFixed(3))}`;
 }
 
+/** How a view is named wherever it is listed or outlined: its title and its scale, or just the title when no scale is set. */
+export function viewLabel(view) {
+  return view.scaleRatio == null ? view.title : `${view.title}: ${scaleLabel(view.scaleRatio)}`;
+}
+
 export function rectPolygon(a, b) {
   const x0 = Math.min(a[0], b[0]);
   const y0 = Math.min(a[1], b[1]);

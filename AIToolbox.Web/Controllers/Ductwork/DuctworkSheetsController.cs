@@ -137,7 +137,13 @@ public sealed class DuctworkSheetsController(JobRepository jobs, EditLockService
         (bodies ?? []).Select(b => new NewSheet
         {
             PageNo = b.PageNo, WidthPts = b.WidthPts, HeightPts = b.HeightPts, Rotation = b.Rotation, SheetNumber = b.SheetNumber, Title = b.Title, Discipline = b.Discipline,
-            Kind = DuctworkParse.OptionalEnum<SheetKind>(b.Kind, "sheet kind") ?? SheetKind.Other, ContentHashHex = b.ContentHash, HasTextLayer = b.HasTextLayer ?? true
+            Kind = DuctworkParse.OptionalEnum<SheetKind>(b.Kind, "sheet kind") ?? SheetKind.Other, ContentHashHex = b.ContentHash, HasTextLayer = b.HasTextLayer ?? true,
+            Views = (b.Views ?? []).Select(v => new NewDetectedView
+            {
+                // A view's number is part of how a person refers to it ("detail 3"), so it leads the title.
+                Title = string.IsNullOrWhiteSpace(v.Number) ? v.Title ?? "" : $"{v.Number.Trim()}. {v.Title}".Trim(),
+                Type = DuctworkParse.OptionalEnum<ViewType>(v.Type, "view type") ?? ViewType.Plan, ScaleRatio = v.ScaleRatio, Polygon = v.Polygon
+            }).ToList()
         }).ToList();
 
     private static JsonElement? Parse(string? json) => json is null ? null : JsonDocument.Parse(json).RootElement.Clone();
