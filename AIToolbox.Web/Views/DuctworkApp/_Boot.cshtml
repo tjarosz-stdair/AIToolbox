@@ -6,6 +6,7 @@
      data-job-id="@Model.JobId"
      data-email="@Model.Email"
      data-admin="@(Model.IsAdmin ? "true" : "false")"
+     data-manager="@(Model.IsJobManager ? "true" : "false")"
      data-pdfjs="@Url.Content("~/lib/pdfjs/pdf.min.mjs")"
      data-pdfjs-worker="@Url.Content("~/lib/pdfjs/pdf.worker.min.mjs")"></div>
 <form id="dw-token-form" class="d-none">@Html.AntiForgeryToken()</form>

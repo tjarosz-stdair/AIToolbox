@@ -1,6 +1,7 @@
 // Overview: who and what the job is, how far along it is, who is on it, and its lifecycle (complete, close, reopen).
 
 import { h, clear, field, select, badge, titleCase, fmtDate, toast, promptDialog, confirmDialog } from "./util.js";
+import { archiveBadge, archiveFacts, isActive, operationLine, progressBar, requestArchive, requestRestore } from "./archive-ui.js";
 
 const REVIEW_LEVELS = [
   ["Sensitive", "Sensitive: ask me about every proposal"],
@@ -11,22 +12,62 @@ const STEPS = [["Setup", "Drawings, sheets, building types and multipliers are s
 const STEP_STATES = [["NotStarted", "Not started"], ["Active", "In progress"], ["Done", "Done"]];
 
 export async function render(container, ctx) {
+  let timer = null;
   const paint = async () => {
     clear(container);
     await ctx.reload();
     const view = ctx.job;
     const j = view.job;
     const canChange = ctx.canChange;
+    const archive = await ctx.run(() => ctx.api.get(`/jobs/${ctx.jobId}/archive`));
+    clearTimeout(timer);
+    if (archive?.operations?.[0] && isActive(archive.operations[0])) timer = setTimeout(() => { if (container.isConnected) paint(); }, 2500);
 
     container.append(
       h("div", { class: "dw-grid2" },
         detailsCard(ctx, j, canChange, paint),
-        h("div", {}, workflowCard(ctx, view, canChange, paint), lifecycleCard(ctx, j, paint))),
+        h("div", {}, workflowCard(ctx, view, canChange, paint), lifecycleCard(ctx, j, paint), archiveCard(ctx, j, archive, paint))),
       h("div", { class: "dw-grid2" }, membersCard(ctx, view, paint), h("div", {}, tagsCard(ctx, view, paint), activityCard(ctx))));
   };
 
   await paint();
-  return { dispose() {}, refresh: paint };
+  return { dispose() { clearTimeout(timer); }, refresh: paint };
+}
+
+/** Archive and restore. A job being archived or restored is held still, so this card says what is happening and when it will be done. */
+function archiveCard(ctx, j, archive, repaint) {
+  if (!archive) return null;
+  const op = archive.operations?.[0];
+  const archives = archive.archives || [];
+  const job = { jobId: ctx.jobId, name: j.name, stateBeforeArchive: j.stateBeforeArchive };
+  const state = j.state;
+  const parts = [];
+
+  if (isActive(op)) {
+    parts.push(h("p", { class: "mb-1" }, operationLine(op)), progressBar(op), h("p", { class: "small text-muted mt-2 mb-0" }, "The job is held still while this runs. It carries on if the server restarts."));
+  } else if (state === "Archived") {
+    parts.push(h("p", {}, "This job is archived and its drawings, items and history are not in the database. The archive is the only full copy."));
+    if (op?.status === "Failed") parts.push(h("p", { class: "text-danger small" }, operationLine(op)));
+    if (archive.canRestore) parts.push(h("button", { class: "btn btn-primary btn-sm", type: "button", onclick: async () => { if (await requestRestore(ctx.api, ctx.run, job)) repaint(); } }, "Restore job"));
+    else parts.push(h("p", { class: "text-muted small mb-0" }, "Only the job’s owner or a Job Manager can restore it."));
+  } else if (state === "Complete" || state === "Closed") {
+    if (op?.status === "Failed") parts.push(h("p", { class: "text-danger small" }, operationLine(op)));
+    parts.push(archive.canArchive
+      ? h("div", {}, h("p", { class: "small text-muted" }, "Make a checked copy of this job, and optionally remove its detail from the database to free space. Restore brings it back."),
+        h("button", { class: "btn btn-outline-secondary btn-sm", type: "button", onclick: async () => { if (await requestArchive(ctx.api, ctx.run, job)) repaint(); } }, "Archive…"))
+      : h("p", { class: "text-muted small mb-0" }, "Only the job’s owner or a Job Manager can archive it."));
+  } else if (!archives.length) {
+    return null;
+  }
+
+  if (!isActive(op) && op?.status === "Failed" && state === "Archiving") parts.push(h("p", { class: "text-danger small" }, operationLine(op)));
+
+  if (archives.length) {
+    parts.push(h("h3", { class: "dw-h3" }, "Archives"), h("ul", { class: "list-unstyled mb-0" }, archives.map((a) => h("li", { class: "mb-2" },
+      archiveBadge(a), " ", h("span", { class: "small" }, archiveFacts(a)), a.lastProblem ? h("div", { class: "small text-danger" }, a.lastProblem) : null))));
+  }
+
+  return h("div", { class: "dw-card" }, h("h2", {}, "Archive"), parts);
 }
 
 function detailsCard(ctx, j, canChange, repaint) {

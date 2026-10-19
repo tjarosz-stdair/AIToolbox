@@ -387,3 +387,19 @@ test("a big file skips the whole-file hash but every piece still carries one", a
   assert.equal(api.log.posts[0][1].sha256, null);
   assert.ok(api.log.puts.every((p) => p.hash.length === 64));
 });
+
+// ------------------------------------------------------------------ archive wording
+
+test("an operation is described in plain words, with progress while it runs and the reason when it stopped", async () => {
+  const { operationLine, isActive } = await import("../../AIToolbox.Web/wwwroot/js/ductwork/archive-ui.js");
+  assert.equal(operationLine({ kind: "ArchivePurge", status: "Running", message: "Removing Entity.", progressDone: 25, progressTotal: 100 }), "Archiving and removing from the database: Removing Entity. (25%)");
+  assert.equal(operationLine({ kind: "Restore", status: "Queued" }), "Restoring: waiting for the server to start");
+  assert.equal(operationLine({ kind: "ArchiveZip", status: "Failed", error: "The archive failed verification." }), "Archiving stopped: The archive failed verification.");
+  assert.equal(operationLine(null), "");
+  assert.ok(isActive({ status: "Queued" }) && isActive({ status: "Running" }) && !isActive({ status: "Failed" }) && !isActive(null));
+});
+
+test("progress never reads past one hundred percent", async () => {
+  const { operationLine } = await import("../../AIToolbox.Web/wwwroot/js/ductwork/archive-ui.js");
+  assert.match(operationLine({ kind: "Restore", status: "Running", message: "x", progressDone: 150, progressTotal: 100 }), /\(100%\)$/);
+});

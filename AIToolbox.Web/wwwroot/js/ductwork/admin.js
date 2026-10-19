@@ -11,14 +11,15 @@ export async function startAdmin(root, boot = readBoot(), api = createApi({ base
   };
 
   const paint = async () => {
-    const [bindings, producers, vision, workers] = await Promise.all([run(() => api.get("/admin/task-bindings")), run(() => api.get("/admin/task-bindings/producers")), run(() => api.get("/admin/vision-policy")), run(() => api.get("/admin/workers"))]);
+    const [bindings, producers, vision, workers, managers] = await Promise.all([run(() => api.get("/admin/task-bindings")), run(() => api.get("/admin/task-bindings/producers")), run(() => api.get("/admin/vision-policy")), run(() => api.get("/admin/workers")), run(() => api.get("/admin/job-managers"))]);
     clear(root);
     root.append(
       h("div", { class: "page-heading" }, h("div", {}, h("h1", {}, "Ductwork settings"), h("p", { class: "text-muted mb-0" }, "Connect workers, switch on the kinds of work that have been measured, and control hosted vision.")),
-        h("a", { class: "btn btn-outline-secondary btn-sm", href: boot.base }, "← Jobs")),
+        h("div", { class: "d-flex gap-2" }, h("a", { class: "btn btn-outline-secondary btn-sm", href: `${boot.base}/Archives` }, "Archives"), h("a", { class: "btn btn-outline-secondary btn-sm", href: boot.base }, "← Jobs"))),
       workersCard(api, run, workers, paint, boot),
       bindingsCard(api, run, bindings || [], producers || [], paint),
-      visionCard(api, run, vision, paint));
+      visionCard(api, run, vision, paint),
+      managersCard(api, run, managers, paint));
   };
 
   await paint();
@@ -121,6 +122,29 @@ function bindingsCard(api, run, bindings, producers, repaint) {
         }
       }, "Switch on")))
       : h("p", { class: "text-muted small" }, "No detector has been measured yet, so there is nothing to switch on. Measure one with the evaluation tool first."));
+}
+
+/** Who may archive and restore any job. The permission gives no view of a job's contents. */
+function managersCard(api, run, managers, repaint) {
+  if (!managers) return h("div", { class: "dw-card" }, h("h2", {}, "Job Managers"), h("p", { class: "text-danger" }, "The list could not be loaded."));
+  const email = h("input", { class: "form-control form-control-sm", type: "email", placeholder: "name@company.com", "aria-label": "Email address" });
+  const add = async () => {
+    if (!email.value.trim()) { toast("Enter the person’s email address.", "error"); return; }
+    if (await run(() => api.post("/admin/job-managers", { email: email.value.trim() }), "Added.")) repaint();
+  };
+  email.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+
+  return h("div", { class: "dw-card" },
+    h("h2", {}, "Job Managers"),
+    h("p", { class: "text-muted small" }, "A Job Manager can archive and restore any job, whether or not they are on it. The permission does not let them see a job’s drawings or items. Each grant and removal is recorded."),
+    managers.length ? h("table", { class: "table table-sm align-middle" },
+      h("thead", {}, h("tr", {}, ["Person", "Granted by", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, managers.map((m) => h("tr", {}, h("td", {}, m.userEmail), h("td", { class: "small" }, `${m.grantedBy}, ${fmtDate(m.grantedUtc)}`),
+        h("td", { class: "text-end" }, h("button", {
+          class: "btn btn-outline-danger btn-sm", type: "button",
+          onclick: async () => { if (await confirmDialog(`Remove ${m.userEmail} as a Job Manager?`, { ok: "Remove", kind: "danger" }) && await run(() => api.del(`/admin/job-managers/${encodeURIComponent(m.userEmail)}`), "Removed.")) repaint(); }
+        }, "Remove")))))) : h("p", { class: "text-muted" }, "Nobody is a Job Manager yet. Owners can still archive their own jobs."),
+    h("div", { class: "d-flex gap-2", style: { maxWidth: "460px" } }, email, h("button", { class: "btn btn-primary btn-sm text-nowrap", type: "button", onclick: add }, "Add Job Manager")));
 }
 
 function visionCard(api, run, vision, repaint) {

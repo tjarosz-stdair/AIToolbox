@@ -271,7 +271,21 @@ public sealed class ApiHarness(DuctworkDatabase db)
     }
 
     public DuctworkAppController AppPages(string email, bool admin = false) =>
-        With(new DuctworkAppController(JobRepo), Person(email, admin), NewTab(), null);
+        With(new DuctworkAppController(JobRepo, Permissions), Person(email, admin), NewTab(), null);
+
+    /// <summary>A private folder for this harness's archive zips.</summary>
+    public string ArchiveRoot { get; } = Path.Combine(Path.GetTempPath(), "ductwork-web-archives-" + Guid.NewGuid().ToString("N"));
+
+    public AIToolbox.Ductwork.Core.Archive.ArchiveService Archives =>
+        new(Open, new FileSystemArtifactStore(ArtifactRoot), new AIToolbox.Ductwork.Core.Archive.FileSystemArchiveStore(ArchiveRoot), new AIToolbox.Ductwork.Core.Archive.ArchiveSettings { PurgeBatchRows = 5 });
+
+    public ToolPermissionRepository Permissions => new(Open);
+
+    public DuctworkArchiveController ArchiveApi(string email, bool admin = false) =>
+        With(new DuctworkArchiveController(JobRepo, Archives, Permissions), Person(email, admin), NewTab(), null);
+
+    public DuctworkJobManagersAdminController JobManagersApi() =>
+        With(new DuctworkJobManagersAdminController(Permissions), Person(Admin, admin: true), NewTab(), null);
 
     public DuctworkCatalogController CatalogApi(string email) =>
         With(new DuctworkCatalogController(BindingRepo, Registry), Person(email), NewTab(), null);

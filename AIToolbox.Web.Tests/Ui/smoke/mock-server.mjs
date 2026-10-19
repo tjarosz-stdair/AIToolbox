@@ -45,7 +45,7 @@ const shell = (page, extra = "") => `<!doctype html><html><head><meta charset="u
  data-pdfjs="/lib/pdfjs/pdf.min.mjs" data-pdfjs-worker="/lib/pdfjs/pdf.worker.min.mjs"></div>
 <form id="dw-token-form"><input name="__RequestVerificationToken" value="test-token"></form>
 <main class="container-fluid app-shell" style="padding:1rem"><div id="dw-app" data-page="${page}"></div></main>
-<script type="module" src="/js/ductwork/${{ job: "workbench", jobs: "jobs-list", admin: "admin" }[page]}.js"></script>${extra}</body></html>`;
+<script type="module" src="/js/ductwork/${{ job: "workbench", jobs: "jobs-list", admin: "admin", archives: "archives" }[page]}.js"></script>${extra}</body></html>`;
 
 export function createState() {
   const iso = "2026-10-16T12:00:00Z";
@@ -74,6 +74,8 @@ export function createState() {
     tasks: [{ processingTaskId: 1, publicId: "t1", jobId: 1, taskType: "detect-residential-labels", status: "Succeeded", cancelRequested: false, progressDone: 4, progressTotal: 4, progressMessage: "Done", attempt: 1, maxAttempts: 3, sendsDrawingContentToHostedModel: false, createdUtc: iso, createdBy: "owner@example.com", startedUtc: iso, finishedUtc: iso, errorMessage: null }],
     audit: [{ jobId: 1, eventId: 1, occurredUtc: iso, actorType: "User", actorEmail: "owner@example.com", actorDisplayName: "owner", category: "job", action: "job.created", summary: "Created the job.", beforeJson: null, afterJson: "{\"name\":\"x\"}", reason: null }],
     approvals: [], transmissions: [],
+    managers: [{ userEmail: "mgr@example.com", grantedBy: "admin@example.com", grantedUtc: iso }],
+    old: { state: "Closed", polled: 0, archive: null, op: null },
     workers: [{ workerInstanceId: 1, workerName: "farm-1", workerId: "c5:farm-1", apiConsumerId: 5, keyName: "Ductwork worker: farm-1", keyEnabled: true, hostName: "FARM-01", workerVersion: "1.0.0", contractVersion: "0.1.0",
       taskTypes: ["detect-residential-labels"], maxConcurrency: 2, firstSeenUtc: iso, lastSeenUtc: iso, lastClaimUtc: iso, secondsSinceSeen: 4, runningTasks: 1, status: "Online", drainRequested: false, drainRequestedBy: null, drainRequestedUtc: null }],
     uploads: new Map(), nextEntity: 100
@@ -93,6 +95,7 @@ export function startServer(state = createState()) {
       if (p === "/__state") return json(res, 200, { violations: state.violations, calls: state.calls, entities: state.entities, lockHeld: state.lockHeld, job: state.job, uploads: [...state.uploads.values()].map((u) => ({ id: u.id, received: u.received, total: u.total })), files: state.files, sheets: state.sheets, types: state.types, findings: state.findings, rules: state.rules, tags: state.tags, approvals: state.approvals, steps: state.steps });
       if (p === "/Ductwork") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(shell("jobs")); }
       if (/^\/Ductwork\/Jobs\/\d+$/.test(p)) { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(shell("job")); }
+      if (p === "/Ductwork/Archives") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(shell("archives")); }
       if (p === "/Ductwork/Admin") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(shell("admin")); }
       if (/\/files\/[^/]+\/content$/.test(p)) {
         res.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": pdf.length, "Accept-Ranges": "bytes" });
@@ -111,6 +114,20 @@ export function startServer(state = createState()) {
     }
   });
 
+  // One job the Archives page can act on. It moves through archiving and restoring as the page asks again, standing in for the server working.
+  function oldJobView() {
+    const o = state.old;
+    if ((o.state === "Archiving" || o.state === "Restoring") && o.polled++ >= 1) {
+      if (o.state === "Archiving") { o.state = o.requested?.kind === "Purge" ? "Archived" : "Closed"; o.archive = { status: o.requested?.kind === "Purge" ? "Purged" : "Ready" }; o.op = { operationId: 5, jobId: 7, kind: o.requested?.kind === "Purge" ? "ArchivePurge" : "ArchiveZip", status: "Succeeded", finishedUtc: "2026-10-16T12:00:00Z" }; }
+      else { o.state = "Closed"; o.archive = { status: "Ready" }; o.op = { operationId: 6, jobId: 7, kind: "Restore", status: "Succeeded", finishedUtc: "2026-10-16T12:00:00Z" }; }
+    } else if (o.state === "Archiving" || o.state === "Restoring") {
+      o.op = { operationId: 5, jobId: 7, kind: o.state === "Restoring" ? "Restore" : o.requested?.kind === "Purge" ? "ArchivePurge" : "ArchiveZip", status: "Running", message: o.state === "Restoring" ? "Putting the job back." : "Writing the archive.", progressDone: 40, progressTotal: 100 };
+    }
+
+    const a = o.archive && { archiveId: 3, jobId: 7, completionVersion: 1, kind: "Purge", status: o.archive.status, stateAtArchive: "Closed", sizeBytes: 123456, sourceFileCount: 1, createdUtc: "2026-10-16T12:00:00Z", createdBy: "owner@example.com", storageKey: "jobs/7/x.zip", lastProblem: null };
+    return { admin: true, problems: [], jobs: [{ jobId: 7, name: "Old Bid", customerName: "Acme", projectName: null, ownerEmail: "owner@example.com", state: o.state, completionVersion: 1, updatedUtc: "2026-10-16T12:00:00Z", latestArchive: a, operation: o.op }] };
+  }
+
   async function api(req, res, url, route, body) {
     const method = req.method;
     state.calls.push(`${method} ${route}${url.search}`);
@@ -118,7 +135,7 @@ export function startServer(state = createState()) {
     if (!req.headers["x-ductwork-tab"] || req.headers["x-ductwork-tab"].length < 8) state.violations.push(`no tab id: ${method} ${route}`);
     if (method !== "GET" && req.headers.requestverificationtoken !== "test-token") state.violations.push(`no antiforgery token: ${method} ${route}`);
     // Everything that changes a job's content needs the fencing token. These do not: they are not edits of content.
-    const exempt = /(\/tags|\/members|\/baseline|\/activity|\/lock|\/vision|\/uploads\/[^/]+$|\/rules\/preview|\/cancel|^\/jobs\/1\/(complete|close|reopen)|^\/admin)/;
+    const exempt = /(\/tags|\/members|\/baseline|\/activity|\/lock|\/vision|\/uploads\/[^/]+$|\/rules\/preview|\/cancel|^\/jobs\/1\/(complete|close|reopen|archive|restore)|^\/admin)/;
     const needsLock = (m, r) => m !== "GET" && r.startsWith("/jobs/1") && !exempt.test(r);
     if (needsLock(method, route) && !req.headers["x-ductwork-fencing-token"]) {
       state.violations.push(`no fencing token: ${method} ${route}`);
@@ -162,6 +179,9 @@ export function startServer(state = createState()) {
           totals: [{ category: null, tag: null, type: "Boot", size: "4x10x7", manufacturer: null, model: null, customerPartCode: null, unit: "EA", total: null, knownPart: 78, isComplete: false, pendingBuildingTypes: ["Type 5"], proposedCount: 3 }]
         });
       }
+      if (route === "/jobs/1/archive") return json(res, 200, { state: "Draft", canArchive: false, canRestore: false, archives: [], operations: [] });
+      if (route === "/admin/job-managers") return json(res, 200, state.managers);
+      if (route === "/archives") return json(res, 200, oldJobView());
       if (route === "/admin/workers") return json(res, 200, state.workers);
       if (route === "/workers/summary") return json(res, 200, { online: state.workers.filter((w) => w.status === "Online").length, draining: state.workers.filter((w) => w.status === "Draining").length, total: state.workers.length });
       if (route === "/admin/task-bindings") return json(res, 200, [{ taskBindingId: 1, taskType: "detect-residential-labels", producerId: 1, evalRunId: 1, sendsDrawingContentToHostedModel: false, maxAttempts: 3, activeFromUtc: "2026-10-16T12:00:00Z", retiredUtc: null, createdBy: "admin@example.com" }]);
@@ -225,6 +245,10 @@ export function startServer(state = createState()) {
     if (method === "POST" && route === "/jobs/1/vision-approvals") { const a = { approvalId: "a1", kind: "PerRun", status: "Active", approvedBy: "owner@example.com", approvedUtc: "2026-10-16T12:00:00Z", expiresUtc: "2099-01-01T00:00:00Z", isExpired: false, sheetIds: ["s2"], pageCount: 1, imageBudget: 6, imagesSent: 0, reason: bodyJson().reason, noticeVersion: 2 }; state.approvals.push(a); return json(res, 201, a); }
     if (method === "POST" && (r = m(/^\/admin\/workers\/(\d+)\/drain$/))) { const w = state.workers.find((x) => x.workerInstanceId === Number(r[1])); const on = bodyJson().drain === true; Object.assign(w, { drainRequested: on, status: on ? "Draining" : "Online", drainRequestedBy: on ? "admin@example.com" : null, drainRequestedUtc: on ? "2026-10-16T12:00:00Z" : null }); return json(res, 200, w); }
     if (method === "POST" && route === "/admin/workers/keys") { const b = bodyJson(); return json(res, 201, { apiConsumerId: 9, keyId: 9, workerName: b.workerName, apiKey: "aitb_SMOKE", scopes: ["ductwork:worker", "tool:DuctworkTakeoff"], serverUrl: "http://x", settings: JSON.stringify({ Worker: { ServerUrl: "http://x", ApiKey: "aitb_SMOKE", WorkerName: b.workerName } }, null, 2) }); }
+    if (method === "POST" && route === "/admin/job-managers") { state.managers.push({ userEmail: bodyJson().email, grantedBy: "admin@example.com", grantedUtc: "2026-10-16T12:00:00Z" }); return json(res, 201, state.managers); }
+    if (method === "DELETE" && (r = m(/^\/admin\/job-managers\/(.+)$/))) { state.managers = state.managers.filter((x) => x.userEmail !== decodeURIComponent(r[1])); return json(res, 200, state.managers); }
+    if (method === "POST" && route === "/jobs/7/archive") { const b = bodyJson(); state.old.requested = b; state.old.state = "Archiving"; state.old.polled = 0; state.old.archive = { status: "Writing" }; return json(res, 202, { operationId: 5, jobId: 7, kind: b.kind === "Purge" ? "ArchivePurge" : "ArchiveZip", status: "Queued" }); }
+    if (method === "POST" && route === "/jobs/7/restore") { state.old.state = "Restoring"; state.old.polled = 0; return json(res, 202, { operationId: 6, jobId: 7, kind: "Restore", status: "Queued" }); }
     if (method === "PUT" && route === "/admin/vision-policy") return json(res, 200, bodyJson());
     if (method === "POST" && route === "/admin/task-bindings") return json(res, 201, bodyJson());
 

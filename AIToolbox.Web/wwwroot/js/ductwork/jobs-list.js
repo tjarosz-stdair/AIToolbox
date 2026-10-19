@@ -4,7 +4,7 @@ import { createApi, ApiError, qs } from "./api.js";
 import { antiforgeryFrom, readBoot } from "./boot.js";
 import { h, clear, field, select, badge, titleCase, fmtDate, dialog, toast, debounce } from "./util.js";
 
-const STATES = [["active", "Open jobs"], ["Complete", "Complete"], ["Closed", "Closed"], ["all", "All"]];
+const STATES = [["active", "Open jobs"], ["Complete", "Complete"], ["Closed", "Closed"], ["Archived", "Archived"], ["all", "All"]];
 
 export async function startJobsList(root, boot = readBoot(), api = createApi({ base: boot.api, antiforgery: antiforgeryFrom() })) {
   const state = { filter: "active", text: "", tag: "", jobs: [] };
@@ -37,7 +37,7 @@ export async function startJobsList(root, boot = readBoot(), api = createApi({ b
       h("tbody", {}, jobs.map((j) => h("tr", { class: "dw-jobrow", onclick: () => { location.href = `${boot.base}/Jobs/${j.jobId}`; } },
         h("td", {}, h("a", { href: `${boot.base}/Jobs/${j.jobId}`, class: "fw-semibold", onclick: (e) => e.stopPropagation() }, j.name)),
         h("td", {}, [j.customerName, j.projectName].filter(Boolean).join(" / ")),
-        h("td", {}, badge(titleCase(j.state), j.state === "Complete" ? "success" : j.state === "Closed" ? "secondary" : "primary")),
+        h("td", {}, badge(titleCase(j.state), j.state === "Complete" ? "success" : j.state === "Closed" || j.state === "Archived" ? "secondary" : "primary")),
         h("td", { class: "small" }, j.ownerEmail), h("td", { class: "small text-muted" }, fmtDate(j.updatedUtc))))))));
   };
 
@@ -51,7 +51,8 @@ export async function startJobsList(root, boot = readBoot(), api = createApi({ b
   clear(root);
   root.append(
     h("div", { class: "page-heading" }, h("div", {}, h("h1", {}, "Ductwork Takeoff"), h("p", { class: "text-muted mb-0" }, "Count ductwork items from mechanical drawings, check what was found, and produce a count sheet.")),
-      h("div", { class: "d-flex gap-2" }, boot.isAdmin ? h("a", { class: "btn btn-outline-secondary btn-sm", href: `${boot.base}/Admin` }, "Settings") : null,
+      h("div", { class: "d-flex gap-2" }, boot.isAdmin || boot.isJobManager ? h("a", { class: "btn btn-outline-secondary btn-sm", href: `${boot.base}/Archives` }, "Archives") : null,
+        boot.isAdmin ? h("a", { class: "btn btn-outline-secondary btn-sm", href: `${boot.base}/Admin` }, "Settings") : null,
         h("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => newJobDialog(api, boot) }, "New job"))),
     h("div", { class: "d-flex gap-2 mb-3 flex-wrap" }, filter, search, tag), table);
   await load();

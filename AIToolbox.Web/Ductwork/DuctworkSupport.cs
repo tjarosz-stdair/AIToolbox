@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AIToolbox.Ductwork.Core.Activity;
+using AIToolbox.Ductwork.Core.Archive;
 using AIToolbox.Ductwork.Core.Counting;
 using AIToolbox.Ductwork.Core.Data;
 using AIToolbox.Ductwork.Core.Drawings;
@@ -69,6 +70,17 @@ public sealed class DuctworkOptions
     /// storage that is backed up and has room for the drawings; the app pool needs to write there.
     /// </summary>
     public string? ArtifactRoot { get; set; }
+
+    /// <summary>
+    /// The folder archive zips are kept in. Blank means <c>App_Data/ductwork-archive</c> under the app. Zips are the only full copy of a
+    /// purged job and are never deleted automatically, so point this at storage that is backed up and has plenty of room.
+    /// </summary>
+    public string? ArchiveRoot { get; set; }
+
+    /// <summary>Rows removed per statement while purging a job, so a large job never holds one huge transaction.</summary>
+    public int ArchivePurgeBatchRows { get; set; } = 2000;
+
+    public ArchiveSettings ToArchiveSettings() => new() { PurgeBatchRows = Math.Clamp(ArchivePurgeBatchRows, 100, 20000) };
 
     /// <summary>The size the browser cuts a file into. Kept well under the request limits of IIS and the proxy in front of it.</summary>
     public long UploadChunkBytes { get; set; } = 8L * 1024 * 1024;
@@ -206,6 +218,8 @@ public sealed class DuctworkApiExceptionAttribute : ExceptionFilterAttribute
         UploadBusyException => (409, new { code = "busy", error = ex.Message }),
         ChunkIntegrityException => (422, new { code = "checksum", error = ex.Message }),
         ResultRejectedException rejected => (422, new { code = "result-rejected", error = ex.Message, reasons = rejected.Reasons }),
+        ArchiveMissingException => (404, new { code = "archive-missing", error = ex.Message }),
+        ArchiveCorruptException corrupt => (422, new { code = "archive-corrupt", error = ex.Message, problems = corrupt.Problems }),
         JobRuleViolationException => (422, new { code = "rule", error = ex.Message }),
         ArgumentException => (400, new { code = "bad-request", error = ex.Message }),
         _ => null
@@ -238,6 +252,14 @@ public static class DuctworkServiceCollectionExtensions
                 : configured;
             return new FileSystemArtifactStore(root);
         });
+        services.AddSingleton<IArchiveStore>(sp =>
+        {
+            var configured = sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ArchiveRoot;
+            var root = string.IsNullOrWhiteSpace(configured)
+                ? Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "App_Data", "ductwork-archive")
+                : configured;
+            return new FileSystemArchiveStore(root);
+        });
         services.AddSingleton(sp => new UploadService(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<IArtifactStore>(), sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ToUploadSettings()));
 
@@ -253,6 +275,9 @@ public static class DuctworkServiceCollectionExtensions
         services.AddSingleton(sp => new TaskResultIngestor(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(),
             sp.GetRequiredService<ReviewLevelSettings>()));
 
+        services.AddSingleton(sp => new ArchiveService(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>(), sp.GetRequiredService<IArtifactStore>(),
+            sp.GetRequiredService<IArchiveStore>(), sp.GetRequiredService<IOptions<DuctworkOptions>>().Value.ToArchiveSettings()));
+        services.AddSingleton(sp => new ToolPermissionRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new WorkerRegistry(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddSingleton(sp => new VisionRepository(sp.GetRequiredService<Func<CancellationToken, Task<SqlConnection>>>()));
         services.AddScoped<DuctworkVisionGateway>();
@@ -263,6 +288,7 @@ public static class DuctworkServiceCollectionExtensions
 
         services.AddHostedService<DuctworkMigrationService>();
         services.AddHostedService<DuctworkUploadSweepService>();
+        services.AddHostedService<DuctworkArchiveRunnerService>();
         return services;
     }
 }
@@ -321,6 +347,52 @@ public sealed class DuctworkUploadSweepService(UploadService uploads, VisionRepo
             }
 
             try { await Task.Delay(Interval, stoppingToken); }
+            catch (OperationCanceledException) { return; }
+        }
+    }
+}
+
+/// <summary>
+/// Does the queued archive, purge and restore work. An operation that is queued or whose runner died is picked up here, so a
+/// restart in the middle of a purge finishes it rather than leaving the job half-emptied. Like the upload sweep, a database without
+/// the Ductwork schema is not an error: the feature is off until the schema is applied on purpose.
+/// </summary>
+public sealed class DuctworkArchiveRunnerService(ArchiveService archives, ILogger<DuctworkArchiveRunnerService> logger) : BackgroundService
+{
+    private static readonly TimeSpan Idle = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan Backoff = TimeSpan.FromSeconds(30);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
+        catch (OperationCanceledException) { return; }
+
+        var owner = $"{Environment.MachineName}:{Environment.ProcessId}";
+        var context = AuditContext.ForSystem("archive runner");
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var pause = Idle;
+            try
+            {
+                // Keep going while there is work, so a queue clears without waiting between operations.
+                if (await archives.RunNextAsync(owner, context, stoppingToken)) continue;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (SqlException ex) when (ex.Number == 208)
+            {
+                pause = TimeSpan.FromMinutes(5);
+                logger.LogDebug("The Ductwork schema is not applied yet; the archive runner has nothing to do.");
+            }
+            catch (Exception ex)
+            {
+                pause = Backoff;
+                logger.LogWarning(ex, "The archive runner hit a problem and will try again shortly.");
+            }
+
+            try { await Task.Delay(pause, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }
     }

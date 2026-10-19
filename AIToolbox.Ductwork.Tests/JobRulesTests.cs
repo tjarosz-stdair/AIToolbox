@@ -209,7 +209,7 @@ public class JobRulesTests
          typeof(AIToolbox.Ductwork.Core.Drawings.UploadService), typeof(AIToolbox.Ductwork.Core.Drawings.SheetRepository),
          typeof(AIToolbox.Ductwork.Core.Counting.EntityReviewRepository),
          typeof(AIToolbox.Ductwork.Core.Rules.RuleRepository), typeof(AIToolbox.Ductwork.Core.Counting.FindingRepository), typeof(AIToolbox.Ductwork.Core.Llm.VisionRepository),
-         typeof(AIToolbox.Ductwork.Core.Tasks.WorkerRegistry)];
+         typeof(AIToolbox.Ductwork.Core.Tasks.WorkerRegistry), typeof(AIToolbox.Ductwork.Core.Archive.ArchiveService), typeof(AIToolbox.Ductwork.Core.Jobs.ToolPermissionRepository)];
 
     private static IEnumerable<(Type Type, MethodInfo Method)> PublicMethods() =>
         DataLayer.SelectMany(type => type

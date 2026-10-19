@@ -472,7 +472,10 @@ public sealed class JobRepository
 
             var version = await t.BumpAsync("State = 'Draft', ReopenedUtc = SYSUTCDATETIME(), ReopenedBy = @by, ReopenReason = @reason",
                 ("@by", Actor(context)), ("@reason", reason.Trim()));
-            await t.AuditAsync(version, new AuditEntry("lifecycle", "job.reopened", "Reopened the job.", "Job", t.Job.PublicId.ToString("D"),
+            // An archive describes the job as it was. Once the job changes it is out of date: kept, never deleted, but marked so.
+            var superseded = await ExecAsync(t.Connection, t.Transaction,
+                "UPDATE ductwork.JobArchive SET Status = 'Superseded', SupersededUtc = SYSUTCDATETIME() WHERE JobId = @j AND Status = 'Ready';", t.Token, ("@j", jobId));
+            await t.AuditAsync(version, new AuditEntry("lifecycle", "job.reopened", superseded > 0 ? $"Reopened the job. {superseded} earlier archive(s) are now out of date." : "Reopened the job.", "Job", t.Job.PublicId.ToString("D"),
                 Json(new Dictionary<string, object?> { ["state"] = t.Job.State.ToString() }),
                 Json(new Dictionary<string, object?> { ["state"] = "Draft" })));
             return await t.ReloadAsync();

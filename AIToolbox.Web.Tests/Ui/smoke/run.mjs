@@ -168,6 +168,33 @@ try {
     await clickButton("I have copied it", "document.querySelector('.dw-dialog')");
   });
 
+  await step("admin page lists the Job Managers", async () => {
+    await s.navigate(`${base}/Ductwork/Admin`);
+    await expectText("Job Managers", "mgr@example.com", "does not let them see");
+  });
+
+  await step("archives page: archive and remove, wait for it, then restore", async () => {
+    await s.navigate(`${base}/Ductwork/Archives`);
+    await expectText("Archives", "Old Bid", "Closed", "Archive…");
+    await clickButton("Archive…");
+    await s.waitFor("document.querySelector('.dw-dialog')", 5000, "the archive dialog");
+    await expectText("Keep a copy", "Archive and remove from the database");
+    await s.eval("document.querySelector('.dw-dialog input[value=Purge]').click()");
+    // The name must be typed before it will go ahead.
+    await clickButton("Archive", "document.querySelector('.dw-dialog')");
+    await expectText("Type the job’s name exactly");
+    await fill(".dw-dialog input[type=text], .dw-dialog input:not([type])", "Old Bid");
+    await clickButton("Archive", "document.querySelector('.dw-dialog')");
+    await until(async () => (await state()).calls.some((c) => c === "POST /jobs/7/archive"), "the archive request");
+    await expectText("Archiving and removing from the database");
+    await expectText("Archived and removed from the database", "Restore");
+    await clickButton("Restore");
+    await s.waitFor("document.querySelector('.dw-dialog')", 5000, "the restore confirmation");
+    await clickButton("Restore", "document.querySelector('.dw-dialog')");
+    await expectText("Restoring");
+    await expectText("Archived (copy kept, data still in the database)", "Archive…");
+  });
+
   await step("detection tab warns when no worker is connected", async () => {
     await s.navigate(`${base}/Ductwork/Jobs/1`);
     await s.waitFor("document.querySelector('.dw-tabs') && document.querySelector('.dw-tabpane')", 20000, "the workbench");

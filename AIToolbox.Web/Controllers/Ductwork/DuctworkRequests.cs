@@ -109,3 +109,9 @@ public sealed record SetScaleRequest(double Ratio, string? Method, System.Text.J
 public sealed record AddRegionRequest(string? Kind, string? Reason, double[][]? Polygon);
 
 public sealed record WorkerSheetsRequest(string? WorkerName, Guid FileId, SheetBody[]? Sheets);
+
+public sealed record ArchiveJobRequest(string? Kind, string? ConfirmName);
+
+public sealed record RelinkArchiveRequest(string? StorageKey);
+
+public sealed record GrantJobManagerRequest(string? Email);

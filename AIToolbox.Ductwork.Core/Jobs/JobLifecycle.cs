@@ -14,7 +14,8 @@ public readonly record struct Decision(bool Allowed, string? Reason)
 ///   Draft / InReview  -> Closed
 ///   Complete / Closed -> Draft            (reopen, reason required)
 ///
-/// Archiving, Archived and Restoring belong to a later slice and are never editable.
+/// Complete / Closed -> Archiving -> Archived (or back, for a copy only) -> Restoring -> Complete / Closed: see ArchiveService.
+/// Archiving, Archived and Restoring are never editable.
 /// </summary>
 public static class JobLifecycle
 {

@@ -58,7 +58,7 @@ public class UiBackingTests(DuctworkDatabase db) : IClassFixture<DuctworkDatabas
     [Fact]
     public async Task The_job_list_and_settings_pages_tell_the_script_who_is_asking()
     {
-        var list = await RunAsync(() => Task.FromResult(_h.AppPages(Editor).Index()));
+        var list = await RunAsync(() => _h.AppPages(Editor).Index(default));
         Assert.Equal((200, false), (list.Status, list["model"].GetProperty("isAdmin").GetBoolean()));
         var admin = await RunAsync(() => Task.FromResult(_h.AppPages(Admin, admin: true).Admin()));
         Assert.True(admin["model"].GetProperty("isAdmin").GetBoolean());
